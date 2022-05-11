@@ -10,6 +10,9 @@
   - [Deployment Steps](#deployment-steps)
     - [Credentials Configuration](#credentials-configuration)
     - [ClickHouse Configuration](#clickhouse-configuration)
+      - [Service Customization](#service-customization)
+      - [Performance Configuration](#performance-configuration)
+      - [Persistent Volumes](#persistent-volumes)
   - [Pre-built Dashboards](#pre-built-dashboards)
     - [Flow Records Dashboard](#flow-records-dashboard)
     - [Pod-to-Pod Flows Dashboard](#pod-to-pod-flows-dashboard)
@@ -56,14 +59,29 @@ ClickHouse as the data storage, and use Grafana as the data visualization and mo
 
 ### Deployment Steps
 
-To deploy the Grafana Flow Collector, the first step is to install the ClickHouse
-Operator, which creates, configures and manages ClickHouse clusters. Check the [homepage](https://github.com/Altinity/clickhouse-operator)
-for more information about the ClickHouse Operator. Current checked-in yaml is based on their
-[v0.18.2](https://github.com/Altinity/clickhouse-operator/blob/refs/tags/0.18.2/deploy/operator/clickhouse-operator-install-bundle.yaml) released version. Running the following command
-will install ClickHouse Operator into `kube-system` Namespace.
+We support deploying the Grafana Flow Collector with Helm. Here is the
+[Helm chart](../build/charts/theia/) for the Grafana Flow Collector. Please follow
+the instructions from the Helm chart [README](../build/charts/theia/README.md)
+to customize the installation.
+
+You can clone the repository and run the following command to install the Grafana
+Flow Collector into Namespace `flow-visibility`.
 
 ```bash
-kubectl apply -f https://raw.githubusercontent.com/antrea-io/theia/main/build/yamls/clickhouse-operator-install-bundle.yaml
+helm install -f <path-to-your-values-file> theia ./build/charts/theia -n flow-visibility --create-namespace
+```
+
+We recommend using Helm to deploy the Grafana Flow Collector. But if you prefer
+not to clone the repository, you can mannually deploy it. The first step is to
+install the ClickHouse Operator, which creates, configures and manages ClickHouse
+clusters. Check the [homepage](https://github.com/Altinity/clickhouse-operator)
+for more information about the ClickHouse Operator. Current checked-in yaml is
+based on their [v0.18.2](https://github.com/Altinity/clickhouse-operator/blob/refs/tags/0.18.2/deploy/operator/clickhouse-operator-install-bundle.yaml)
+released version. Running the following command will install ClickHouse Operator
+into `kube-system` Namespace.
+
+```bash
+kubectl apply -f https://raw.githubusercontent.com/antrea-io/theia/main/build/charts/theia/crds/clickhouse-operator-install-bundle.yaml
 ```
 
 To deploy a released version of the Grafana Flow Collector, find a deployment manifest
@@ -81,10 +99,11 @@ use the checked-in [deployment yaml](/build/yamls/flow-visibility.yml):
 kubectl apply -f https://raw.githubusercontent.com/antrea-io/theia/main/build/yamls/flow-visibility.yml
 ```
 
-Grafana is exposed through a NodePort Service by default in `flow-visibility.yml`.
-If the given K8s cluster supports LoadBalancer Services, Grafana can be exposed
-through a LoadBalancer Service by changing the `grafana` Service type in the manifest
-like below.
+Grafana is exposed through a NodePort Service by default. If the given K8s cluster
+supports LoadBalancer Services, Grafana can be exposed through a LoadBalancer
+Service. If you install with Helm, please override `grafana.service.type` in
+`values.yaml`. If you install without Helm, please change the `grafana` Service
+type in the manifest `flow-visibility.yml` like below.
 
 ```yaml
 apiVersion: v1
@@ -151,17 +170,56 @@ You should be able to see a Grafana login page. Login credentials:
 - username: admin
 - password: admin
 
-To stop the Grafana Flow Collector, run the following commands:
+To stop the Grafana Flow Collector, run the following commands if you deploy it
+by Helm:
+
+```shell
+helm uninstall theia -n flow-visibility
+kubectl delete namespace flow-visibility
+kubectl delete -f https://raw.githubusercontent.com/antrea-io/theia/main/build/charts/theia/crds/clickhouse-operator-install-bundle.yaml -n kube-system
+```
+
+Run the following commands if you deploy it by the generated manifest available
+online:
 
 ```shell
 kubectl delete -f flow-visibility.yml
-kubectl delete -f https://raw.githubusercontent.com/antrea-io/theia/main/build/yamls/clickhouse-operator-install-bundle.yml -n kube-system
+kubectl delete -f https://raw.githubusercontent.com/antrea-io/theia/main/build/charts/theia/crds/clickhouse-operator-install-bundle.yaml -n kube-system
 ```
 
 #### Credentials Configuration
 
-ClickHouse credentials are specified in `flow-visibility.yml` as a Secret named
-`clickhouse-secret`.
+If you install with Helm, ClickHouse credentials are specified in `values.yaml`
+as `clickhouse.secret`.
+
+```yaml
+secret:
+  # -- ClickHouse username. It will be stored in a secret.
+  username: "clickhouse_operator"
+  # -- ClickHouse password. It will be stored in a secret.
+  password: "clickhouse_operator_password"
+```
+
+ClickHouse credentials are also specified in `flow-aggregator.yml` as a Secret
+named `clickhouse-secret` as shown below. Please also make the corresponding
+changes.
+
+```yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  labels:
+    app: flow-aggregator
+  name: clickhouse-secret
+  namespace: flow-aggregator
+stringData:
+  password: clickhouse_operator_password
+  username: clickhouse_operator
+type: Opaque
+```
+
+If you install without Helm, ClickHouse credentials are specified in
+`flow-visibility.yml` as a Secret named `clickhouse-secret`.
 
 ```yaml
 apiVersion: v1
@@ -175,8 +233,8 @@ stringData:
 type: Opaque
 ```
 
-If the username `clickhouse_operator` has been changed, please
-update the following section accordingly.
+If the username `clickhouse_operator` has been changed in `flow-visibility.yml`,
+please update the following section accordingly.
 
 ```yaml
 apiVersion: "clickhouse.altinity.com/v1"
@@ -193,25 +251,22 @@ spec:
       clickhouse_operator/networks/ip: "::/0"
 ```
 
-ClickHouse credentials are also specified in `flow-aggregator.yml` as a Secret
-named `clickhouse-secret` as shown below. Please also make the corresponding changes.
+Similarly, you also need to update the ClickHouse credentials in the Flow
+Aggregator as stated above.
+
+If you install with Helm, Grafana login credentials are specified in `values.yaml`
+as `grafana.secret`.
 
 ```yaml
-apiVersion: v1
-kind: Secret
-metadata:
-  labels:
-    app: flow-aggregator
-  name: clickhouse-secret
-  namespace: flow-aggregator
-stringData:
-  password: clickhouse_operator_password
-  username: clickhouse_operator
-type: Opaque
+secret:
+  # -- Grafana username. It will be stored in a secret.
+  username: "admin"
+  # -- Grafana password. It will be stored in a secret.
+  password: "admin"
 ```
 
-Grafana login credentials are specified in `flow-visibility.yml` as a Secret named
-`grafana-secret`.
+If you install without Helm, Grafana login credentials are specified in
+`flow-visibility.yml` as a Secret named `grafana-secret`.
 
 ```yaml
 apiVersion: v1
@@ -230,10 +285,29 @@ Collector in production.
 
 #### ClickHouse Configuration
 
+##### Service Customization
+
 The ClickHouse database can be accessed through the Service `clickhouse-clickhouse`.
-The Pod exposes HTTP port at 8123 and TCP port at 9000 by default. The ports are
-specified in `flow-visibility.yml` as `serviceTemplates` of a `ClickHouseInstallation`
-resource. To use other ports, please update the following section.
+The Pod exposes HTTP port at 8123 and TCP port at 9000 by default.
+
+If you install with Helm, The ports are specified in `values.yaml` as
+`clickhouse.port`.
+
+```yaml
+port:
+  # -- HTTP port number for the ClickHouse service.
+  http: 8123
+  # -- TCP port number for the ClickHouse service.
+  tcp: 9000
+```
+
+The TCP Service is used by the Flow Aggregator. If you have changed the TCP port,
+please update the `databaseURL` following
+[Flow Aggregator Configuration](https://github.com/antrea-io/antrea/blob/main/docs/network-flow-visibility.md#configuration-1).
+
+If you install without Helm, the ports are specified in `flow-visibility.yml` as
+`serviceTemplates` of a `ClickHouseInstallation` resource. To use other ports,
+please update the following section.
 
 ```yaml
 serviceTemplates:
@@ -278,17 +352,25 @@ metadata:
   namespace: flow-visibility
 ```
 
+##### Performance Configuration
+
 The ClickHouse throughput depends on two factors - the storage size of the ClickHouse
 and the time interval between the batch commits to the ClickHouse. Larger storage
 size and longer commit interval provide higher throughput.
 
-Grafana flow collector supports the ClickHouse in-memory deployment with limited
-storage size. This is specified in `flow-visibility.yml` under the `clickhouse`
-resource of kind: `ClickHouseInstallation`. The default value of storage size for
-the ClickHouse server is 8 GiB. Users can expect a linear growth in the ClickHouse
-throughput when they enlarge the storage size. For development or testing environment,
-you can decrease the storage size to 2GiB. To deploy the ClickHouse with a different
-storage size, please modify the `sizeLimit` in the following section.
+Grafana Flow Collector supports the ClickHouse in-memory deployment with limited
+storage size. The default value of storage size for the ClickHouse server is 8 GiB.
+Users can expect a linear growth in the ClickHouse throughput when they enlarge
+the storage size. For development or testing environment, you can decrease the
+storage size to 2 GiB.
+
+If you install with Helm, please override `clickhouse.storageSize`
+in `values.yaml`.
+
+If you install without Helm, the storage size is specified in `flow-visibility.yml`
+under the `clickhouse` resource of kind: `ClickHouseInstallation`. To deploy the
+ClickHouse with a different storage size, please modify the `sizeLimit` in the
+following section.
 
 ```yaml
 - emptyDir:
@@ -297,10 +379,210 @@ storage size, please modify the `sizeLimit` in the following section.
   name: clickhouse-storage-volume
 ```
 
+To deploy ClickHouse with Persistent Volumes and limited storage size, please refer
+to [Persistent Volumes](#persistent-volumes).
+
 The time interval between the batch commits to the ClickHouse is specified in the
 [Flow Aggregator Configuration](https://github.com/antrea-io/antrea/blob/main/docs/network-flow-visibility.md#configuration-1)
 as `commitInterval`. The ClickHouse throughput grows sightly when the commit interval
 grows from 1s to 8s. A commit interval larger than 8s provides little improvement on the throughput.
+
+##### Persistent Volumes
+
+By default, ClickHouse is deployed in memory. We support deploying ClickHouse with
+Persistent Volumes.
+
+[PersistentVolume](https://kubernetes.io/docs/concepts/storage/persistent-volumes/)
+(PV) is a piece of storage in the K8s cluster, which requires to be manually
+provisioned by an administrator or dynamically provisioned using Storage Classes.
+A PersistentVolumeClaim (PVC) is a request for storage which consumes PV. As
+ClickHouse is deployed as a StatefulSet, the volume can be claimed using
+`volumeClaimTemplate`.
+
+If you install with Helm, PersistentVolume are specified in `values.yaml` at
+`clickhouse.persistentVolume`.
+
+```yaml
+persistentVolume:
+  # -- Enable deploying the ClickHouse with Persistent Volumes.
+  enable: false
+  # -- Persistent Volume Provisioner. Required if Persistent Volumes is enable.
+  # It must be one of "StorageClass", "Local", "NFS".
+  provisioner: "Local"
+  # -- The local path. Required when Persistent Volumes is enable and the
+  # provisioner is "Local".
+  localPath: "/data"
+  # -- Affinity for the Local Persistent Volume. Required when Persistent
+  # Volumes is enable and the provisioner is "Local".
+  affinity: 
+    required:
+      nodeSelectorTerms:
+      - matchExpressions:
+        - key: antrea.io/clickhouse-data-node
+          operator: Exists
+  # -- The NFS server hostname or IP address. Required when Persistent Volumes
+  # is enable the provisioner is "NFS".
+  nfsHost: ""
+  # -- The path exported on the NFS server. Required when Persistent Volumes
+  # is enable the provisioner is "NFS".
+  nfsPath: ""
+  # -- The StorageClass used to dynamically provision the Persistent Volume.
+  # Required when Persistent Volumes is enable the provisioner is "StorageClass".
+  storageClass: ""
+```
+
+Please follow the steps below to deploy the ClickHouse with Persistent Volumes:
+
+1. Set `persistentVolume.enable` to true.
+
+1. Set `persistentVolume.provisioner` to one of "StorageClass", "Local", "NFS".
+
+1. If `persistentVolume.provisioner` is set to "Local", please set `localPath`
+to the path to store the ClickHouse data and provide the Node affinity per your
+requirement. The default Node affinity requires to label the Node used to store
+the ClickHouse data with `antrea.io/clickhouse-data-node=`.
+  
+    If `persistentVolume.provisioner` is set to "NFS", please set `nfsHost` to
+    the host name of the NFS server and `nfsPath` to the exported path on the NFS
+    server.
+
+    If `persistentVolume.provisioner` is set to "StorageClass", please set `storageClass`
+    to your own `StorageClass` name.
+
+If you install without Helm, please follow the steps below to deploy the
+ClickHouse with Persistent Volumes:
+
+1. Provision the PersistentVolume. K8s supports a great number of
+[PersistentVolume types](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#types-of-persistent-volumes).
+You can provision your own PersistentVolume per your requirements. Here are
+two simple examples for your reference.
+
+    Before creating the PV manually, you need to create a `StorageClass` shown
+    in the section below.
+
+      ```yaml
+      apiVersion: storage.k8s.io/v1
+      kind: StorageClass
+      metadata:
+        name: clickhouse-storage
+      provisioner: kubernetes.io/no-provisioner
+      volumeBindingMode: WaitForFirstConsumer
+      reclaimPolicy: Retain
+      allowVolumeExpansion: True
+      ```
+
+    After the `StorageClass` is created, you can create a Local PV or a NFS PV
+    by following the steps below.
+
+    - Local PV allows you to store the ClickHouse data at a pre-defined path on
+    a specific Node. Refer to the section below to create the PV. Please replace
+    `LOCAL_PATH` with the path to store the ClickHouse data and label the Node
+    used to store the ClickHouse data with `antrea.io/clickhouse-data-node=`.
+
+      ```yaml
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: clickhouse-pv
+      spec:
+        storageClassName: clickhouse-storage
+        capacity:
+          storage: 8Gi
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        local:
+          path: LOCAL_PATH
+        nodeAffinity:
+          required:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: antrea.io/clickhouse-data-node
+                operator: Exists
+      ```
+
+    - NFS PV allows you to store the ClickHouse data on an existing NFS server.
+    Refer to the section below to create the PV. Please replace `NFS_SERVER_ADDRESS`
+    with the host name of the NFS server and `NFS_SERVER_PATH` with the exported
+    path on the NFS server.
+
+      ```yaml
+      apiVersion: v1
+      kind: PersistentVolume
+      metadata:
+        name: clickhouse-pv
+      spec:
+        storageClassName: clickhouse-storage
+        capacity:
+          storage: 8Gi
+        accessModes:
+          - ReadWriteOnce
+        volumeMode: Filesystem
+        nfs:
+          path: NFS_SERVER_PATH
+          server: NFS_SERVER_ADDRESS
+      ```
+
+    In both examples, you can set `.spec.capacity.storage` in PersistentVolume
+    to your storage size. This value is for informative purpose as K8s does not
+    enforce the capacity of PVs. If you want to limit the storage usage, you need
+    to ask for your storage system to enforce that. For example, you can create
+    a Local PV on a partition with the limited size. We recommend using a dedicated
+    saving space for the ClickHouse if you are going to run the Flow Collector in
+    production.
+
+    As these examples do not use any dynamic provisioner, the reclaim policy
+    for the PVs is `Retain` by default. After stopping the Grafana Flow Collector,
+    if you no long need the data for future use, you may need to manually clean
+    up the data on the local disk or NFS server.
+
+1. Request the PV for ClickHouse. Please add a `volumeClaimTemplate` section
+under `.spec.templates` for the resource `ClickHouseInstallation` in
+`flow-visibility.yml` as shown in the example below. `storageClassName` should
+be set to your own `StorageClass` name, and `.resources.requests.storage`
+should be set to your storage size.
+
+    ```yaml
+    volumeClaimTemplates:
+    - name: clickhouse-storage-template
+      spec:
+        accessModes:
+        - ReadWriteOnce
+        resources:
+          requests:
+            storage: 8Gi
+        storageClassName: clickhouse-storage
+    ```
+
+    Then add this template as `dataVolumeClaimTemplate` to the section below.
+
+    ```yaml
+    defaults:
+      templates:
+        dataVolumeClaimTemplate: clickhouse-storage-template
+        podTemplate: pod-template
+        serviceTemplate: service-template
+    ```
+
+1. Remove the in-memory related deployment options, by removing the appropriate
+`volume` and `volumeMount` for the `ClickHouseInstallation` resource in
+`flow-visibility.yml`.
+
+    The `volumeMounts` entry to be removed is the following one:
+
+    ```yaml
+    - mountPath: /var/lib/clickhouse
+      name: clickhouse-storage-volume
+    ```
+
+    The `volumes` entry to be removed is the following one:
+
+    ```yaml
+    - emptyDir:
+        medium: Memory
+        sizeLimit: 8Gi
+      name: clickhouse-storage-volume
+    ```
 
 ### Pre-built Dashboards
 
@@ -411,26 +693,31 @@ are two ways to import the dashboard depending on your needs:
 like our pre-built dashboards, generate a deployment manifest with the changes by
 following the steps below:
 
-1. Clone the repository. Exported dashboard JSON files should be placed under `antrea/build/yamls/base/provisioning/dashboards`.
-1. If a new dashboard is added, edit [kustomization.yml][flow_visibility_kustomization_yaml]
-by adding the file in the following section:
+1. Clone the repository. Exported dashboard JSON files should be placed under
+`theia/build/charts/theia/provisioning/dashboards`.
+
+1. If a new dashboard is added, add the file to `grafana.dashboard` in `values.yaml`.
+You can also remove a dashboard by deleting the file in this section.
 
     ```yaml
-    - name: grafana-dashboard-config
-      files:
-      - provisioning/dashboards/flow_records_dashboard.json
-      - provisioning/dashboards/pod_to_pod_dashboard.json
-      - provisioning/dashboards/pod_to_service_dashboard.json
-      - provisioning/dashboards/pod_to_external_dashboard.json
-      - provisioning/dashboards/node_to_node_dashboard.json
-      - provisioning/dashboards/networkpolicy_allow_dashboard.json
-      - provisioning/dashboards/[new_dashboard_name].json
+    dashboards:
+      - flow_records_dashboard.json
+      - pod_to_pod_dashboard.json
+      - pod_to_service_dashboard.json
+      - pod_to_external_dashboard.json
+      - node_to_node_dashboard.json
+      - networkpolicy_allow_dashboard.json
+      - [new_dashboard_name].json
     ```
 
-1. Generate the new YAML manifest by running:
+1. Deploy the Grafana Flow Collector with Helm by running
 
-```bash
-./hack/generate-manifest.sh > build/yamls/flow-visibility.yml
-```
+    ```bash
+    helm install -f <path-to-your-values-file> theia ./build/charts/theia -n flow-visibility --create-namespace
+    ```
 
-[flow_visibility_kustomization_yaml]: ../build/yamls/base/kustomization.yml
+    Or generate the new YAML manifest by running:
+
+    ```bash
+    ./hack/generate-manifest.sh > build/yamls/flow-visibility.yml
+    ```

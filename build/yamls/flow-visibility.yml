@@ -85,30 +85,31 @@ data:
     UInt64,\n        throughputFromDestinationNode UInt64,\n        reverseThroughputFromSourceNode
     UInt64,\n        reverseThroughputFromDestinationNode UInt64,\n        trusted
     UInt8 DEFAULT 0\n    ) engine=MergeTree\n    ORDER BY (timeInserted, flowEndSeconds)\n
-    \   TTL timeInserted + INTERVAL 1 HOUR\n    SETTINGS merge_with_ttl_timeout =
-    3600;\n\n    CREATE MATERIALIZED VIEW flows_pod_view\n    ENGINE = SummingMergeTree\n
-    \   ORDER BY (\n        timeInserted,\n        flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n
-    \       flowEndSecondsFromDestinationNode,\n        sourcePodName,\n        destinationPodName,\n
-    \       destinationIP,\n        destinationServicePortName,\n        flowType,\n
-    \       sourcePodNamespace,\n        destinationPodNamespace)\n    TTL timeInserted
-    + INTERVAL 1 HOUR\n    SETTINGS merge_with_ttl_timeout = 3600\n    POPULATE\n
-    \   AS SELECT\n        timeInserted,\n        flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n
-    \       flowEndSecondsFromDestinationNode,\n        sourcePodName,\n        destinationPodName,\n
-    \       destinationIP,\n        destinationServicePortName,\n        flowType,\n
-    \       sourcePodNamespace,\n        destinationPodNamespace,\n        sum(octetDeltaCount)
-    AS octetDeltaCount,\n        sum(reverseOctetDeltaCount) AS reverseOctetDeltaCount,\n
-    \       sum(throughput) AS throughput,\n        sum(reverseThroughput) AS reverseThroughput,\n
-    \       sum(throughputFromSourceNode) AS throughputFromSourceNode,\n        sum(throughputFromDestinationNode)
-    AS throughputFromDestinationNode\n    FROM flows\n    GROUP BY\n        timeInserted,\n
+    \   TTL timeInserted + INTERVAL 1 MINUTE\n    SETTINGS merge_with_ttl_timeout
+    = 60;\n\n    CREATE MATERIALIZED VIEW IF NOT EXISTS flows_pod_view\n    ENGINE
+    = SummingMergeTree\n    ORDER BY (\n        timeInserted,\n        flowEndSeconds,\n
+    \       flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
+    \       sourcePodName,\n        destinationPodName,\n        destinationIP,\n
+    \       destinationServicePortName,\n        flowType,\n        sourcePodNamespace,\n
+    \       destinationPodNamespace)\n    TTL timeInserted + INTERVAL 1 MINUTE\n    SETTINGS
+    merge_with_ttl_timeout = 60\n    POPULATE\n    AS SELECT\n        timeInserted,\n
     \       flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       sourcePodName,\n        destinationPodName,\n        destinationIP,\n
     \       destinationServicePortName,\n        flowType,\n        sourcePodNamespace,\n
-    \       destinationPodNamespace;\n\n    CREATE MATERIALIZED VIEW flows_node_view\n
-    \   ENGINE = SummingMergeTree\n    ORDER BY (\n        timeInserted,\n        flowEndSeconds,\n
+    \       destinationPodNamespace,\n        sum(octetDeltaCount) AS octetDeltaCount,\n
+    \       sum(reverseOctetDeltaCount) AS reverseOctetDeltaCount,\n        sum(throughput)
+    AS throughput,\n        sum(reverseThroughput) AS reverseThroughput,\n        sum(throughputFromSourceNode)
+    AS throughputFromSourceNode,\n        sum(throughputFromDestinationNode) AS throughputFromDestinationNode\n
+    \   FROM flows\n    GROUP BY\n        timeInserted,\n        flowEndSeconds,\n
     \       flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
+    \       sourcePodName,\n        destinationPodName,\n        destinationIP,\n
+    \       destinationServicePortName,\n        flowType,\n        sourcePodNamespace,\n
+    \       destinationPodNamespace;\n\n    CREATE MATERIALIZED VIEW IF NOT EXISTS
+    flows_node_view\n    ENGINE = SummingMergeTree\n    ORDER BY (\n        timeInserted,\n
+    \       flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       sourceNodeName,\n        destinationNodeName,\n        sourcePodNamespace,\n
-    \       destinationPodNamespace)\n    TTL timeInserted + INTERVAL 1 HOUR\n    SETTINGS
-    merge_with_ttl_timeout = 3600\n    POPULATE\n    AS SELECT\n        timeInserted,\n
+    \       destinationPodNamespace)\n    TTL timeInserted + INTERVAL 1 MINUTE\n    SETTINGS
+    merge_with_ttl_timeout = 60\n    POPULATE\n    AS SELECT\n        timeInserted,\n
     \       flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       sourceNodeName,\n        destinationNodeName,\n        sourcePodNamespace,\n
     \       destinationPodNamespace,\n        sum(octetDeltaCount) AS octetDeltaCount,\n
@@ -120,13 +121,13 @@ data:
     AS reverseThroughputFromDestinationNode\n    FROM flows\n    GROUP BY\n        timeInserted,\n
     \       flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       sourceNodeName,\n        destinationNodeName,\n        sourcePodNamespace,\n
-    \       destinationPodNamespace;\n\n    CREATE MATERIALIZED VIEW flows_policy_view\n
-    \   ENGINE = SummingMergeTree\n    ORDER BY (\n        timeInserted,\n        flowEndSeconds,\n
-    \       flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
+    \       destinationPodNamespace;\n\n    CREATE MATERIALIZED VIEW IF NOT EXISTS
+    flows_policy_view\n    ENGINE = SummingMergeTree\n    ORDER BY (\n        timeInserted,\n
+    \       flowEndSeconds,\n        flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       egressNetworkPolicyName,\n        egressNetworkPolicyRuleAction,\n        ingressNetworkPolicyName,\n
     \       ingressNetworkPolicyRuleAction,\n        sourcePodNamespace,\n        destinationPodNamespace)\n
-    \   TTL timeInserted + INTERVAL 1 HOUR\n    SETTINGS merge_with_ttl_timeout =
-    3600\n    POPULATE\n    AS SELECT\n        timeInserted,\n        flowEndSeconds,\n
+    \   TTL timeInserted + INTERVAL 1 MINUTE\n    SETTINGS merge_with_ttl_timeout
+    = 60\n    POPULATE\n    AS SELECT\n        timeInserted,\n        flowEndSeconds,\n
     \       flowEndSecondsFromSourceNode,\n        flowEndSecondsFromDestinationNode,\n
     \       egressNetworkPolicyName,\n        egressNetworkPolicyRuleAction,\n        ingressNetworkPolicyName,\n
     \       ingressNetworkPolicyRuleAction,\n        sourcePodNamespace,\n        destinationPodNamespace,\n
@@ -142,10 +143,10 @@ data:
     \       ingressNetworkPolicyRuleAction,\n        sourcePodNamespace,\n        destinationPodNamespace;\n\n
     \   CREATE TABLE IF NOT EXISTS recommendations (\n        id String,\n        type
     String,\n        timeCreated DateTime,\n        yamls String\n    ) engine=MergeTree\n
-    \   ORDER BY (timeCreated);\n    \nEOSQL\n"
+    \   ORDER BY (timeCreated);\n    \nEOSQL"
 kind: ConfigMap
 metadata:
-  name: clickhouse-mounted-configmap-dkbmg82ctg
+  name: clickhouse-mounted-configmap
   namespace: flow-visibility
 ---
 apiVersion: v1
@@ -4681,12 +4682,12 @@ data:
     }
 kind: ConfigMap
 metadata:
-  name: grafana-dashboard-config-h4fg25d7k9
+  name: grafana-dashboard-config
   namespace: flow-visibility
 ---
 apiVersion: v1
 data:
-  dashboard_provider.yml: |
+  dashboard_provider.yaml: |-
     apiVersion: 1
     providers:
       - name: grafana-dashboards
@@ -4697,12 +4698,12 @@ data:
           path: /var/lib/grafana/dashboards
 kind: ConfigMap
 metadata:
-  name: grafana-dashboard-provider-m7d5kfmmc6
+  name: grafana-dashboard-provider
   namespace: flow-visibility
 ---
 apiVersion: v1
 data:
-  datasource_provider.yml: |
+  datasource_provider.yaml: |-
     apiVersion: 1
     datasources:
       - name: ClickHouse
@@ -4718,7 +4719,7 @@ data:
           password: $CLICKHOUSE_PASSWORD
 kind: ConfigMap
 metadata:
-  name: grafana-datasource-provider-h868k56k95
+  name: grafana-datasource-provider
   namespace: flow-visibility
 ---
 apiVersion: v1
@@ -4875,13 +4876,13 @@ spec:
         persistentVolumeClaim:
           claimName: grafana-pvc
       - configMap:
-          name: grafana-datasource-provider-h868k56k95
+          name: grafana-datasource-provider
         name: grafana-datasource-provider
       - configMap:
-          name: grafana-dashboard-provider-m7d5kfmmc6
+          name: grafana-dashboard-provider
         name: grafana-dashboard-provider
       - configMap:
-          name: grafana-dashboard-config-h4fg25d7k9
+          name: grafana-dashboard-config
         name: grafana-dashboard-config
 ---
 apiVersion: clickhouse.altinity.com/v1
@@ -4911,6 +4912,7 @@ spec:
       spec:
         containers:
         - image: projects.registry.vmware.com/antrea/theia-clickhouse-server:21.11
+          imagePullPolicy: IfNotPresent
           name: clickhouse
           volumeMounts:
           - mountPath: /docker-entrypoint-initdb.d
@@ -4934,12 +4936,18 @@ spec:
             value: default.flows
           - name: MV_NAMES
             value: default.flows_pod_view default.flows_node_view default.flows_policy_view
+          - name: STORAGE_SIZE
+            value: 8Gi
+          - name: THRESHOLD
+            value: "0.5"
+          - name: DELETE_PERCENTAGE
+            value: "0.5"
           image: projects.registry.vmware.com/antrea/theia-clickhouse-monitor:latest
           imagePullPolicy: IfNotPresent
           name: clickhouse-monitor
         volumes:
         - configMap:
-            name: clickhouse-mounted-configmap-dkbmg82ctg
+            name: clickhouse-mounted-configmap
           name: clickhouse-configmap-volume
         - emptyDir:
             medium: Memory

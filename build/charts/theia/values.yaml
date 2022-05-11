@@ -1,0 +1,89 @@
+clickhouse:
+  # -- Container image to use for the ClickHouse.
+  image: 
+    repository: "projects.registry.vmware.com/antrea/theia-clickhouse-server"
+    pullPolicy: "IfNotPresent"
+    tag: "21.11"
+  monitor:
+    # -- Determine whether to run a monitor to periodically check the ClickHouse
+    # memory usage and clean data.
+    enable: true
+    # -- The storage percentage at which the monitor starts to delete old records.
+    # Vary from 0 to 1.
+    threshold: 0.5
+    # -- The percentage of records in ClickHouse that will be deleted when the
+    # storage grows above threshold. Vary from 0 to 1.
+    deletePercentage: 0.5
+    # -- Container image to use for the ClickHouse Monitor.
+    image:
+      repository: "projects.registry.vmware.com/antrea/theia-clickhouse-monitor"
+      pullPolicy: "IfNotPresent"
+      tag: "latest"
+  secret:
+    # -- ClickHouse username. It will be stored in a secret.
+    username: "clickhouse_operator"
+    # -- ClickHouse password. It will be stored in a secret.
+    password: "clickhouse_operator_password"
+  port:
+    # -- HTTP port number for the ClickHouse service.
+    http: 8123
+    # -- TCP port number for the ClickHouse service.
+    tcp: 9000
+  # -- ClickHouse storage size. Can be a plain integer or as a fixed-point
+  # number using one of these quantity suffixes: E, P, T, G, M, K. Or the
+  # power-of-two equivalents: Ei, Pi, Ti, Gi, Mi, Ki.
+  storageSize: "8Gi"
+  # -- Time to live for data in the ClickHouse. Can be a plain integer using
+  # one of these unit suffixes SECOND, MINUTE, HOUR, DAY, WEEK, MONTH, QUARTER,
+  # YEAR
+  ttl: 1 HOUR
+  persistentVolume:
+    # -- Enable deploying the ClickHouse with Persistent Volumes.
+    enable: false
+    # -- Persistent Volume Provisioner. Required if Persistent Volumes is enable.
+    # It must be one of "StorageClass", "Local", "NFS".
+    provisioner: "Local"
+    # -- The local path. Required when Persistent Volumes is enable and the
+    # provisioner is "Local".
+    localPath: "/data"
+    # -- Affinity for the Local Persistent Volume. Required when Persistent
+    # Volumes is enable and the provisioner is "Local".
+    affinity: 
+      required:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: antrea.io/clickhouse-data-node
+            operator: Exists
+    # -- The NFS server hostname or IP address. Required when Persistent Volumes
+    # is enable the provisioner is "NFS".
+    nfsHost: ""
+    # -- The path exported on the NFS server. Required when Persistent Volumes
+    # is enable the provisioner is "NFS".
+    nfsPath: ""
+    # -- The StorageClass used to dynamically provision the Persistent Volume.
+    # Required when Persistent Volumes is enable the provisioner is "StorageClass".
+    storageClass: ""
+grafana:
+  # -- Container image to use for the Grafana.
+  image: 
+    repository: "projects.registry.vmware.com/antrea/theia-grafana"
+    pullPolicy: "IfNotPresent"
+    tag: "8.3.3"
+  secret:
+    # -- Grafana username. It will be stored in a secret.
+    username: "admin"
+    # -- Grafana password. It will be stored in a secret.
+    password: "admin"
+  service:
+    # -- The type of service exposes Grafana. It must be one of NodePort or LoadBalancer.
+    type: NodePort
+    # -- TCP port number for the Grafana service.
+    tcpPort: 3000
+  installPlugins: "https://downloads.antrea.io/artifacts/grafana-custom-plugins/theia-grafana-sankey-plugin-1.0.0.zip;theia-grafana-sankey-plugin,grafana-clickhouse-datasource 1.0.1"
+  dashboards:
+    - flow_records_dashboard.json
+    - pod_to_pod_dashboard.json
+    - pod_to_service_dashboard.json
+    - pod_to_external_dashboard.json
+    - node_to_node_dashboard.json
+    - networkpolicy_allow_dashboard.json

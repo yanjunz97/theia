@@ -45,11 +45,13 @@ func TestMonitor(t *testing.T) {
 func testMonitorMemoryWithDeletion(t *testing.T, db *sql.DB, mock sqlmock.Sqlmock) {
 	baseTime := time.Now()
 	diskRow := sqlmock.NewRows([]string{"free_space", "total_space"}).AddRow(4, 10)
+	partsRow := sqlmock.NewRows([]string{"SUM(bytes)"}).AddRow(5)
 	countRow := sqlmock.NewRows([]string{"count"}).AddRow(10)
 	timeRow := sqlmock.NewRows([]string{"timeInserted"}).AddRow(baseTime.Add(5 * time.Second))
 	mock.ExpectQuery("SELECT free_space, total_space FROM system.disks").WillReturnRows(diskRow)
+	mock.ExpectQuery("SELECT SUM(bytes) FROM system.parts").WillReturnRows(partsRow)
 	mock.ExpectQuery("SELECT COUNT() FROM flows").WillReturnRows(countRow)
-	mock.ExpectQuery("SELECT timeInserted FROM flows LIMIT 1 OFFSET 5").WillReturnRows(timeRow)
+	mock.ExpectQuery("SELECT timeInserted FROM flows LIMIT 1 OFFSET 4").WillReturnRows(timeRow)
 	for _, table := range []string{"flows", "flows_pod_view", "flows_node_view", "flows_policy_view"} {
 		command := fmt.Sprintf("ALTER TABLE %s DELETE WHERE timeInserted < toDateTime('%v')", table, baseTime.Add(5*time.Second).Format(timeFormat))
 		mock.ExpectExec(command).WillReturnResult(sqlmock.NewResult(0, 5))
@@ -57,6 +59,10 @@ func testMonitorMemoryWithDeletion(t *testing.T, db *sql.DB, mock sqlmock.Sqlmoc
 
 	tableName = "flows"
 	mvNames = []string{"flows_pod_view", "flows_node_view", "flows_policy_view"}
+	allocatedSpace = 10
+	threshold = 0.5
+	deletePercentage = 0.5
+
 	monitorMemory(db)
 
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -67,8 +73,13 @@ func testMonitorMemoryWithDeletion(t *testing.T, db *sql.DB, mock sqlmock.Sqlmoc
 
 func testMonitorMemoryWithoutDeletion(t *testing.T, db *sql.DB, mock sqlmock.Sqlmock) {
 	diskRow := sqlmock.NewRows([]string{"free_space", "total_space"}).AddRow(6, 10)
+	partsRow := sqlmock.NewRows([]string{"SUM(bytes)"}).AddRow(5)
 	mock.ExpectQuery("SELECT free_space, total_space FROM system.disks").WillReturnRows(diskRow)
+	mock.ExpectQuery("SELECT SUM(bytes) FROM system.parts").WillReturnRows(partsRow)
 
+	allocatedSpace = 10
+	threshold = 0.5
+	deletePercentage = 0.5
 	monitorMemory(db)
 
 	if err := mock.ExpectationsWereMet(); err != nil {
