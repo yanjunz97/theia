@@ -157,4 +157,14 @@ clickhouse-monitor:
 clickhouse-monitor-plugin:
 	@mkdir -p $(BINDIR)
 	GOOS=linux $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/plugins/clickhouse-monitor
-	
+
+.PHONY: theiactl
+theiactl:
+	@mkdir -p $(BINDIR)
+	GOOS=linux $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theiactl
+
+# Add the darwin version binary to help dev&test on Mac for now
+.PHONY: theiactl-darwin
+theiactl-darwin:
+	@mkdir -p $(BINDIR)
+	GOOS=darwin $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/pkg/theiactl
