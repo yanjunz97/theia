@@ -16,6 +16,7 @@ package commands
 
 import (
 	"fmt"
+	"os/exec"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -49,9 +50,34 @@ $ theiactl policyreco result --id e998433e-accb-4888-9fc8-06563f073e86
 		if err != nil {
 			return fmt.Errorf("couldn't create k8s client using given kubeconfig, %v", err)
 		}
-		// TODO: setup port forwarder using clientset.
-		// TODO: get the recommendation result from ClickHouse using recoID
-		fmt.Printf("recoID: %v, clientset: %v\n", recoID, clientset)
+		err = CheckClickHousePod(clientset)
+		if err != nil {
+			return err
+		}
+		// Forward the ClickHouse service port
+		serviceName := "clickhouse-clickhouse"
+		port, err := getServicePort(clientset, serviceName)
+		if err != nil {
+			return err
+		}
+		portForwardCmd := exec.Command("kubectl", "port-forward", fmt.Sprintf("service/%s", serviceName), "-n", flowVisibilityNS, fmt.Sprintf("%d:%d", port, port))
+		if err := portForwardCmd.Start(); err != nil {
+			return fmt.Errorf("fail to forward port for service %s, %v", serviceName, err)
+		}
+		defer portForwardCmd.Process.Kill()
+		// get the recommendation result from ClickHouse with id
+		var recoResult string
+		databaseURL := fmt.Sprintf("tcp://localhost:%d", port)
+		connect, err := ConnectClickHouse(clientset, databaseURL)
+		if err != nil {
+			return fmt.Errorf("error when connecting to ClickHouse, %v", err)
+		}
+		query := "SELECT yamls FROM recommendations WHERE id = (?);"
+		err = connect.QueryRow(query, recoID).Scan(&recoResult)
+		if err != nil {
+			return fmt.Errorf("get recommendation result failed of recommendation job with id %s: %v", recoID, err)
+		}
+		fmt.Print(recoResult)
 		return nil
 	},
 }
