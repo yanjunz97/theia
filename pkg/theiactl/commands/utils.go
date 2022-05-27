@@ -63,6 +63,16 @@ func CheckClickHousePod(clientset kubernetes.Interface) error {
 	if len(pods.Items) < 1 {
 		return fmt.Errorf("can't find the ClickHouse Pod, please check the deployment of ClickHouse")
 	}
+	hasRunningPod := false
+	for _, pod := range pods.Items {
+		if pod.Status.Phase == "Running" {
+			hasRunningPod = true
+			break
+		}
+	}
+	if !hasRunningPod {
+		return fmt.Errorf("can't find a running ClickHouse Pod, please check the deployment of ClickHouse")
+	}
 	return nil
 }
 

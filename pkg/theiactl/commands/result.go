@@ -125,7 +125,7 @@ func getClickHouseServicePort(clientset kubernetes.Interface) (int32, error) {
 }
 
 func getClickHouseSecret(clientset kubernetes.Interface) (username []byte, password []byte, err error) {
-	secret, err := clientset.CoreV1().Secrets("flow-visibility").Get(context.TODO(), "clickhouse-secret", metav1.GetOptions{})
+	secret, err := clientset.CoreV1().Secrets(flowVisibilityNS).Get(context.TODO(), "clickhouse-secret", metav1.GetOptions{})
 	if err != nil {
 		return username, password, fmt.Errorf("error %v when finding the ClickHouse secret, please check the deployment of ClickHouse", err)
 	}

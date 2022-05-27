@@ -29,3 +29,48 @@ jobs:
         asset_path: ./assets/flow-visibility.yml
         asset_name: flow-visibility.yml
         asset_content_type: application/octet-stream
+    - name: Upload theiactl-darwin-x86_64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./assets/theiactl-darwin-x86_64
+        asset_name: theiactl-darwin-x86_64
+        asset_content_type: application/octet-stream
+    - name: Upload theiactl-linux-arm
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./assets/theiactl-linux-arm
+        asset_name: theiactl-linux-arm
+        asset_content_type: application/octet-stream
+    - name: Upload theiactl-linux-arm64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./assets/theiactl-linux-arm64
+        asset_name: theiactl-linux-arm64
+        asset_content_type: application/octet-stream
+    - name: Upload theiactl-linux-x86_64
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./assets/theiactl-linux-x86_64
+        asset_name: theiactl-linux-x86_64
+        asset_content_type: application/octet-stream
+    - name: Upload theiactl-windows-x86_64.exe
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ github.event.release.upload_url }}
+        asset_path: ./assets/theiactl-windows-x86_64.exe
+        asset_name: theiactl-windows-x86_64.exe
+        asset_content_type: application/octet-stream

@@ -86,7 +86,7 @@ $ theiactl policyreco check --id e998433e-accb-4888-9fc8-06563f073e86
 				return fmt.Errorf("failed to forward port for policy recommendation service, %v", err)
 			}
 			defer portForwardCmd.Process.Kill()
-			stateProgress, err := getPolicyRecommendationProgress(recoID)
+			stateProgress, err := getPolicyRecommendationProgress()
 			if err != nil {
 				return err
 			}
@@ -97,29 +97,30 @@ $ theiactl policyreco check --id e998433e-accb-4888-9fc8-06563f073e86
 	},
 }
 
-func getPolicyRecommendationProgress(id string) (string, error) {
+func getPolicyRecommendationProgress() (string, error) {
 	// Get the id of current spark application
 	url := "http://localhost:4040/api/v1/applications"
 	response, err := getResponseFromSparkMonitoringSvc(url)
 	if err != nil {
-		return "", fmt.Errorf("failed to get response from Spark Monitoring service with id %s, %v", id, err)
+		return "", fmt.Errorf("failed to get response from Spark Monitoring service: %v", err)
 	}
 	var getAppsResult []map[string]interface{}
 	json.Unmarshal([]byte(response), &getAppsResult)
 	if len(getAppsResult) != 1 {
-		return "", fmt.Errorf("wrong number of Spark Application with id %s, expected 1, got %d", id, len(getAppsResult))
+		return "", fmt.Errorf("wrong number of Spark Application, expected 1, got %d", len(getAppsResult))
 	}
 	sparkAppID := getAppsResult[0]["id"]
 	// Check the percentage of completed stages
 	url = fmt.Sprintf("http://localhost:4040/api/v1/applications/%s/stages", sparkAppID)
 	response, err = getResponseFromSparkMonitoringSvc(url)
 	if err != nil {
-		return "", fmt.Errorf("failed to get response from Spark Monitoring service at %s, %v", url, err)
+		return "", fmt.Errorf("failed to get response from Spark Monitoring service: %v", err)
 	}
 	var getStagesResult []map[string]interface{}
 	json.Unmarshal([]byte(response), &getStagesResult)
-	if len(getStagesResult) < 1 {
-		return "", fmt.Errorf("wrong number of Spark Application stages, expected more than 1, got %d", len(getStagesResult))
+	NumStageResult := len(getStagesResult)
+	if NumStageResult < 1 {
+		return "", fmt.Errorf("wrong number of Spark Application stages, expected at least 1, got %d", NumStageResult)
 	}
 	completedStages := 0
 	for _, stage := range getStagesResult {
@@ -127,7 +128,7 @@ func getPolicyRecommendationProgress(id string) (string, error) {
 			completedStages++
 		}
 	}
-	return fmt.Sprintf(": %d/%d (%d%%) stages completed", completedStages, len(getStagesResult), completedStages*100/len(getStagesResult)), nil
+	return fmt.Sprintf(": %d/%d (%d%%) stages completed", completedStages, NumStageResult, completedStages*100/NumStageResult), nil
 }
 
 func getResponseFromSparkMonitoringSvc(url string) ([]byte, error) {
@@ -149,6 +150,9 @@ func getResponseFromSparkMonitoringSvc(url string) ([]byte, error) {
 		return true, nil
 	}); err != nil {
 		return nil, getErr
+	}
+	if res == nil {
+		return nil, fmt.Errorf("response is nil")
 	}
 	if res.Body != nil {
 		defer res.Body.Close()
