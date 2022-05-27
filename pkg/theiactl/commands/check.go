@@ -83,7 +83,7 @@ $ theiactl policyreco check --id e998433e-accb-4888-9fc8-06563f073e86
 			// Forward the policy recommendation service port
 			portForwardCmd := exec.Command("kubectl", "port-forward", fmt.Sprintf("service/policy-reco-%s-ui-svc", recoID), "-n", flowVisibilityNS, "4040:4040")
 			if err := portForwardCmd.Start(); err != nil {
-				return fmt.Errorf("fail to forward port for policy recommendation service, %v", err)
+				return fmt.Errorf("failed to forward port for policy recommendation service, %v", err)
 			}
 			defer portForwardCmd.Process.Kill()
 			stateProgress, err := getPolicyRecommendationProgress(recoID)
