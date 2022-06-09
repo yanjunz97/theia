@@ -4,6 +4,7 @@
 
 <!-- toc -->
 - [Overview](#overview)
+- [Getting Started](#getting-started)
 - [Grafana Flow Collector](#grafana-flow-collector)
   - [Purpose](#purpose)
   - [About Grafana and ClickHouse](#about-grafana-and-clickhouse)
@@ -42,6 +43,45 @@ aspects of Pod workloads.
 For visualizing the network flows, Antrea monitors the flows in Linux conntrack
 module. These flows are converted to flow records, and then flow records are post-processed
 before they are sent to the configured external flow collector.
+
+## Getting Started
+
+To get started, make sure you have installed Antrea with the Flow Exporter
+feature enabled by setting the following `antrea-agent` config parameter in
+the Antrea deployment manifest.
+
+```yaml
+  antrea-agent.conf: |
+    ...
+    featureGates:
+      ...
+      FlowExporter: true
+```
+
+To enable both Grafana Flow Collector and
+[NetworkPolicy Recommendation](networkpolicy-recommendation.md), please clone
+the theia repository, and install Theia and Flow Aggregator by runnning the
+following commands:
+
+```bash
+git clone https://github.com/antrea-io/theia.git
+helm install theia theia/build/charts/theia --set sparkOperator.enable=true -n flow-visibility --create-namespace
+helm install flow-aggregator theia/build/charts/flow-aggregator --set clickHouse.enable=true,recordContents.podLabels=true -n flow-aggregator --create-namespace
+```
+
+To enable only Grafana Flow Collector, please clone the theia repository,
+and install Theia and Flow Aggregator by runnning the following commands:
+
+```bash
+git clone https://github.com/antrea-io/theia.git
+helm install theia theia/build/charts/theia -n flow-visibility --create-namespace
+helm install flow-aggregator theia/build/charts/flow-aggregator --set clickHouse.enable=true -n flow-aggregator --create-namespace
+```
+
+You can refer to Antrea documentation to learn more information about
+[Flow Exporter](https://github.com/antrea-io/antrea/blob/main/docs/network-flow-visibility.md#flow-exporter),
+[Flow Aggregator](https://github.com/antrea-io/antrea/blob/main/docs/network-flow-visibility.md#flow-aggregator)
+and their advanced configurations.
 
 ## Grafana Flow Collector
 

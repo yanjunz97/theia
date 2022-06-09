@@ -116,6 +116,7 @@ clean:
 manifest:
 	@echo "===> Generating dev manifest for Theia <==="
 	$(CURDIR)/hack/generate-manifest.sh --mode dev > build/yamls/flow-visibility.yml
+	$(CURDIR)/hack/generate-manifest-flow-aggregator.sh --mode dev > build/yamls/flow-aggregator.yml
 
 .PHONY: verify
 verify:
