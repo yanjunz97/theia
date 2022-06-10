@@ -5,6 +5,9 @@
 <!-- toc -->
 - [Overview](#overview)
 - [Getting Started](#getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Theia Installation](#theia-installation)
+  - [Additional information](#additional-information)
 - [Grafana Flow Collector](#grafana-flow-collector)
   - [Purpose](#purpose)
   - [About Grafana and ClickHouse](#about-grafana-and-clickhouse)
@@ -46,6 +49,8 @@ before they are sent to the configured external flow collector.
 
 ## Getting Started
 
+### Prerequisites
+
 To get started, make sure you have installed Antrea with the Flow Exporter
 feature enabled by setting the following `antrea-agent` config parameter in
 the Antrea deployment manifest.
@@ -57,6 +62,8 @@ the Antrea deployment manifest.
       ...
       FlowExporter: true
 ```
+
+### Theia Installation
 
 To enable both Grafana Flow Collector and
 [NetworkPolicy Recommendation](networkpolicy-recommendation.md), please clone
@@ -77,6 +84,8 @@ git clone https://github.com/antrea-io/theia.git
 helm install theia theia/build/charts/theia -n flow-visibility --create-namespace
 helm install flow-aggregator theia/build/charts/flow-aggregator --set clickHouse.enable=true -n flow-aggregator --create-namespace
 ```
+
+### Additional information
 
 You can refer to Antrea documentation to learn more information about
 [Flow Exporter](https://github.com/antrea-io/antrea/blob/main/docs/network-flow-visibility.md#flow-exporter),
