@@ -14,6 +14,14 @@ jobs:
       with:
         go-version: 1.17
     - uses: actions/checkout@v3
+    - name: Install Helm
+      uses: azure/setup-helm@v1
+      with:
+        version: v3.8.1
+    - name: Upload Helm Charts
+      uses: helm/chart-releaser-action@v1.4.0
+      env:
+        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     - name: Build assets
       env:
         TAG: ${{ github.ref }}
@@ -74,11 +82,3 @@ jobs:
         asset_path: ./assets/theia-windows-x86_64.exe
         asset_name: theia-windows-x86_64.exe
         asset_content_type: application/octet-stream
-    - name: Install Helm
-      uses: azure/setup-helm@v1
-      with:
-        version: v3.8.1
-    - name: Run chart-releaser
-      uses: helm/chart-releaser-action@v1.4.0
-      env:
-        CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
