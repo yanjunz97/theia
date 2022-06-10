@@ -21,7 +21,7 @@ jobs:
     - name: Upload Helm Charts
       uses: helm/chart-releaser-action@v1.4.0
       with:
-        charts_dir: build/charts
+        charts_dir: build
       env:
         CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
     - name: Build assets
