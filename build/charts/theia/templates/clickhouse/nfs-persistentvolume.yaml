@@ -1,16 +1,25 @@
 {{- if eq .Values.clickhouse.storage.createPersistentVolume.type "NFS" }}
+{{ $pvNum := 1 }}
+{{- if .Values.clickhouse.cluster.enable }}
+{{ $pvNum = int (mul .Values.clickhouse.cluster.shards .Values.clickhouse.cluster.replicas) }}
+{{- end }}
+{{- range $i, $_ := until $pvNum }}
+{{- if not (eq $i 0) }}
+---
+{{- end }}
 apiVersion: v1
 kind: PersistentVolume
 metadata:
-  name: clickhouse-pv
+  name: clickhouse-pv-{{$i}}
 spec:
   storageClassName: clickhouse-storage
   capacity:
-    storage: {{ .Values.clickhouse.storage.size }}
+    storage: {{ $.Values.clickhouse.storage.size }}
   accessModes:
     - ReadWriteOnce
   volumeMode: Filesystem
   nfs:
-    path: {{ .Values.clickhouse.storage.createPersistentVolume.nfs.path }}
-    server: {{ .Values.clickhouse.storage.createPersistentVolume.nfs.host }}
+    path: {{ $.Values.clickhouse.storage.createPersistentVolume.nfs.path }}
+    server: {{ index $.Values.clickhouse.storage.createPersistentVolume.nfs.hosts $i }}
+{{- end }}
 {{- end }}
