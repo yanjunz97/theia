@@ -59,9 +59,19 @@
 {{- define "clickhouse.volume" }}
 {{- $clickhouse := .clickhouse }}
 {{- $enablePV := .enablePV }}
+{{- $Files := .Files }}
 - name: clickhouse-configmap-volume
   configMap:
     name: clickhouse-mounted-configmap
+    items:
+      {{- range $path, $_ :=  $Files.Glob  "provisioning/datasources/*.sh" }}
+      - key: {{ regexReplaceAll "(.*)/" $path "" }}
+        path: {{ regexReplaceAll "(.*)/" $path "" }}
+      {{- end }}
+      {{- range $path, $_ :=  $Files.Glob  "provisioning/datasources/migrators/*.sql" }}
+      - key: {{ regexReplaceAll "(.*)/" $path "" }}
+        path: migrators/{{ regexReplaceAll "(.*)/" $path "" }}
+      {{- end }}
 {{- if not $enablePV }}
 - name: clickhouse-storage-volume
   emptyDir:
@@ -69,3 +79,11 @@
     sizeLimit: {{ $clickhouse.storage.size }}
 {{- end }}
 {{- end }}
+
+
+{{ $currentScope := .}}
+{{ range $path, $_ :=  .Files.Glob  "**.yaml" }}
+    {{- with $currentScope}}
+        {{ .Files.Get $path }}
+    {{- end }}
+{{ end }}

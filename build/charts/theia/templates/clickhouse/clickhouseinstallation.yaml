@@ -71,7 +71,7 @@ spec:
           containers:
             {{- include "clickhouse.server.container" (dict "clickhouse" .Values.clickhouse "enablePV" $enablePV) | indent 12 }}
           volumes:
-            {{- include "clickhouse.volume" (dict "clickhouse" .Values.clickhouse "enablePV" $enablePV) | indent 12 }}
+            {{- include "clickhouse.volume" (dict "clickhouse" .Values.clickhouse "enablePV" $enablePV "Files" .Files) | indent 12 }}
         {{- if .Values.clickhouse.cluster.podDistribution }}
         podDistribution:
         {{- with .Values.clickhouse.cluster.podDistribution }}
@@ -87,7 +87,7 @@ spec:
             {{- include "clickhouse.monitor.container" (dict "clickhouse" .Values.clickhouse "version" .Chart.AppVersion) | indent 12 }}
             {{- end }}
           volumes:
-            {{- include "clickhouse.volume" (dict "clickhouse" .Values.clickhouse "enablePV" $enablePV) | indent 12 }}
+            {{- include "clickhouse.volume" (dict "clickhouse" .Values.clickhouse "enablePV" $enablePV "Files" .Files) | indent 12 }}
         {{- if and .Values.clickhouse.cluster.enable .Values.clickhouse.cluster.podDistribution }}
         podDistribution:
         {{- with .Values.clickhouse.cluster.podDistribution }}

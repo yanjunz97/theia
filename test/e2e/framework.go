@@ -80,7 +80,13 @@ const (
 	flowVisibilityWithSparkYML string = "flow-visibility-with-spark.yml"
 	chOperatorYML              string = "clickhouse-operator-install-bundle.yaml"
 	flowVisibilityCHPodName    string = "chi-clickhouse-clickhouse-0-0-0"
+	chStatefulSetName          string = "chi-clickhouse-clickhouse-0-0"
 	policyOutputYML            string = "output.yaml"
+	chLocalPvLabel             string = "antrea.io/clickhouse-data-node"
+	chLocalPvPath              string = "/data/clickhouse"
+	grafanaPodLabel            string = "app=grafana"
+	clickHousePodLable         string = "app=clickhouse"
+	flowAggregatorPodLabel     string = "app=flow-aggregator"
 
 	agnhostImage  = "k8s.gcr.io/e2e-test-images/agnhost:2.29"
 	busyboxImage  = "projects.registry.vmware.com/antrea/busybox"
@@ -296,6 +302,22 @@ func (data *TestData) restartCoreDNSPods(timeout time.Duration) error {
 		return fmt.Errorf("error when deleting all CoreDNS Pods: %v", err)
 	}
 	return retryOnConnectionLostError(retry.DefaultRetry, func() error { return data.waitForCoreDNSPods(timeout) })
+}
+
+// restartAntreaAgentPods deletes all the antrea-agent Pods to force them to be re-scheduled. It
+// then waits for the new Pods to become available.
+func (data *TestData) restartAntreaAgentPods(timeout time.Duration) error {
+	var gracePeriodSeconds int64 = 1
+	deleteOptions := metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
+	}
+	listOptions := metav1.ListOptions{
+		LabelSelector: "app=antrea,component=antrea-agent",
+	}
+	if err := data.clientset.CoreV1().Pods(antreaNamespace).DeleteCollection(context.TODO(), deleteOptions, listOptions); err != nil {
+		return fmt.Errorf("error when deleting antrea-agent Pods: %v", err)
+	}
+	return data.waitForAntreaDaemonSetPods(timeout)
 }
 
 // checkCoreDNSPods checks that all the Pods for the CoreDNS deployment are ready. If not, it
@@ -883,7 +905,7 @@ func (data *TestData) createBusyboxPodOnNode(name string, ns string, nodeName st
 // getFlowAggregator retrieves the name of the Flow-Aggregator Pod (flow-aggregator-*) running on a specific Node.
 func (data *TestData) getFlowAggregator() (*corev1.Pod, error) {
 	listOptions := metav1.ListOptions{
-		LabelSelector: "app=flow-aggregator",
+		LabelSelector: flowAggregatorPodLabel,
 	}
 	pods, err := data.clientset.CoreV1().Pods(flowAggregatorNamespace).List(context.TODO(), listOptions)
 	if err != nil {
@@ -1090,7 +1112,26 @@ func (data *TestData) createTestNamespace() error {
 
 // deployFlowVisibility deploys ClickHouse Operator and DB. If withSparkOperator
 // is set to true, it also deploys Spark Operator.
-func (data *TestData) deployFlowVisibility(withSparkOperator bool) (string, error) {
+// If withLocalPv is set to true, it deploys DB with Local PersistentVolume.
+func (data *TestData) deployFlowVisibility(withSparkOperator bool, withLocalPv bool) (chSvcIP string, err error) {
+	if withLocalPv {
+		// Label one of the worker Node with antrea.io/clickhouse-data-node=
+		// to fulfill the Local PersistentVolume affinity requirement.
+		node, err := data.clientset.CoreV1().Nodes().Get(context.TODO(), workerNodeName(1), metav1.GetOptions{})
+		if err != nil {
+			return "", fmt.Errorf("error when getting Node %s: %v", workerNodeName(1), err)
+		}
+		node.ObjectMeta.Labels[chLocalPvLabel] = ""
+		_, err = data.clientset.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+		if err != nil {
+			return "", fmt.Errorf("error when updating Node %s: %v", workerNodeName(1), err)
+		}
+		// Create the directory for ClickHouse Local Persistent Volume on the Node
+		rc, _, stderr, err := data.provider.RunCommandOnNode(workerNodeName(1), fmt.Sprintf("mkdir -p %s", chLocalPvPath))
+		if err != nil || rc != 0 {
+			return "", fmt.Errorf("error when creating directory for ClickHouse PersistentVolume on Node %s: %v", workerNodeName(1), stderr)
+		}
+	}
 	flowVisibilityManifest := flowVisibilityYML
 	if withSparkOperator {
 		flowVisibilityManifest = flowVisibilityWithSparkYML
@@ -1099,22 +1140,10 @@ func (data *TestData) deployFlowVisibility(withSparkOperator bool) (string, erro
 	if err != nil || rc != 0 {
 		return "", fmt.Errorf("error when deploying the ClickHouse Operator YML; %s not available on the control-plane Node", chOperatorYML)
 	}
-	if err := wait.Poll(2*time.Second, 10*time.Second, func() (bool, error) {
-		rc, stdout, stderr, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl apply -f %s", flowVisibilityManifest))
-		if err != nil || rc != 0 {
-			// ClickHouseInstallation CRD from ClickHouse Operator install bundle applied soon before
-			// applying CR. Sometimes apiserver validation fails to recognize resource of
-			// kind: ClickHouseInstallation. Retry in such scenario.
-			if strings.Contains(stderr, "ClickHouseInstallation") || strings.Contains(stdout, "ClickHouseInstallation") {
-				return false, nil
-			}
-			return false, fmt.Errorf("error when deploying the flow visibility YML %s: %s, %s, %v", flowVisibilityManifest, stdout, stderr, err)
-		}
-		return true, nil
-	}); err != nil {
+	err = data.deployFlowVisibilityCommon(flowVisibilityManifest)
+	if err != nil {
 		return "", err
 	}
-
 	if withSparkOperator {
 		sparkOperatorPodName, err := data.getSparkOperator()
 		if err != nil {
@@ -1133,7 +1162,7 @@ func (data *TestData) deployFlowVisibility(withSparkOperator bool) (string, erro
 	}
 
 	// check ClickHouse Service http port for Service connectivity
-	chSvc, err := data.GetService("flow-visibility", "clickhouse-clickhouse")
+	chSvc, err := data.GetService(flowVisibilityNamespace, "clickhouse-clickhouse")
 	if err != nil {
 		return "", err
 	}
@@ -1148,28 +1177,111 @@ func (data *TestData) deployFlowVisibility(withSparkOperator bool) (string, erro
 	}); err != nil {
 		return "", fmt.Errorf("timeout checking http port connectivity of clickhouse service: %v", err)
 	}
-
 	return chSvc.Spec.ClusterIP, nil
 }
 
-// deployFlowAggregator deploys the Flow Aggregator with ipfix collector and clickHouse address.
-func (data *TestData) deployFlowAggregator() error {
-	flowAggYaml := flowAggregatorYML
-	rc, _, _, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl apply -f %s", flowAggYaml))
-	if err != nil || rc != 0 {
-		return fmt.Errorf("error when deploying the Flow Aggregator; %s not available on the control-plane Node", flowAggYaml)
+func (data *TestData) deployFlowVisibilityCommon(yamlFile string) error {
+	if err := wait.Poll(2*time.Second, 10*time.Second, func() (bool, error) {
+		rc, stdout, stderr, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl apply -f %s", yamlFile))
+		if err != nil || rc != 0 {
+			// ClickHouseInstallation CRD from ClickHouse Operator install bundle applied soon before
+			// applying CR. Sometimes apiserver validation fails to recognize resource of
+			// kind: ClickHouseInstallation. Retry in such scenario.
+			if strings.Contains(stderr, "ClickHouseInstallation") || strings.Contains(stdout, "ClickHouseInstallation") {
+				return false, nil
+			}
+			return false, fmt.Errorf("error when deploying the flow visibility YML %s: %s, %s, %v", yamlFile, stdout, stderr, err)
+		}
+		return true, nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (data *TestData) waitForClickHousePod() error {
+	// it takes time to terminate the
+	err := wait.Poll(defaultInterval, 2*defaultTimeout, func() (bool, error) {
+		getSS := func(ssName string) (*appsv1.StatefulSet, error) {
+			ss, err := data.clientset.AppsV1().StatefulSets(flowVisibilityNamespace).Get(context.TODO(), ssName, metav1.GetOptions{})
+			if err != nil {
+				return nil, fmt.Errorf("error when getting ClickHouse statefulset: %v", err)
+			}
+			return ss, nil
+		}
+		var ss *appsv1.StatefulSet
+		var err error
+		if ss, err = getSS(chStatefulSetName); err != nil {
+			return false, err
+		}
+
+		// Make sure that all StatefulSet Pods are ready.
+		desiredNumber := ss.Status.Replicas
+		if ss.Status.ReadyReplicas != desiredNumber || ss.Status.UpdatedReplicas != desiredNumber {
+			return false, nil
+		}
+
+		// Make sure that all ClickHouse Pods are not terminating.
+		pods, err := data.clientset.CoreV1().Pods(flowVisibilityNamespace).List(context.TODO(), metav1.ListOptions{
+			LabelSelector: clickHousePodLable,
+		})
+		if err != nil {
+			return false, fmt.Errorf("failed to list ClickHouse Pods: %v", err)
+		}
+		if len(pods.Items) != int(desiredNumber) {
+			return false, nil
+		}
+		for _, pod := range pods.Items {
+			if pod.DeletionTimestamp != nil {
+				return false, nil
+			}
+		}
+		return true, nil
+	})
+	if err == wait.ErrWaitTimeout {
+		_, stdout, _, _ := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s describe pod %s", flowVisibilityNamespace, flowVisibilityCHPodName))
+		return fmt.Errorf("ClickHouse StatefulSet not ready within %v; kubectl describe pod output: %v", defaultTimeout, stdout)
+	} else if err != nil {
+		return err
 	}
 
-	if rc, _, _, err = data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s rollout status deployment/%s --timeout=%v", flowAggregatorNamespace, flowAggregatorDeployment, 2*defaultTimeout)); err != nil || rc != 0 {
-		_, stdout, _, _ := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s describe pod", flowAggregatorNamespace))
-		_, logStdout, _, _ := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s logs -l app=flow-aggregator", flowAggregatorNamespace))
-		return fmt.Errorf("error when waiting for the Flow Aggregator rollout to complete. kubectl describe output: %s, logs: %s", stdout, logStdout)
+	return nil
+}
+
+// restartFlowVisibilityPods deletes all the Flow Visibility Pods to force them to be re-scheduled. It
+// then waits for the new Pods to become available.
+func (data *TestData) restartFlowVisibilityPods() error {
+	var gracePeriodSeconds int64 = 1
+	deleteOptions := metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
 	}
-	// Check for flow-aggregator pod running again for db connection establishment
+	chListOptions := metav1.ListOptions{
+		LabelSelector: clickHousePodLable,
+	}
+	if err := data.clientset.CoreV1().Pods(flowVisibilityNamespace).DeleteCollection(context.TODO(), deleteOptions, chListOptions); err != nil {
+		return fmt.Errorf("error when deleting ClickHouse Pods: %v", err)
+	}
+	grafanaListOptions := metav1.ListOptions{
+		LabelSelector: grafanaPodLabel,
+	}
+	if err := data.clientset.CoreV1().Pods(flowVisibilityNamespace).DeleteCollection(context.TODO(), deleteOptions, grafanaListOptions); err != nil {
+		return fmt.Errorf("error when deleting Grafana Pods: %v", err)
+	}
+	return data.waitForClickHousePod()
+}
+
+// deployFlowAggregator deploys the Flow Aggregator.
+func (data *TestData) deployFlowAggregator() error {
+	err := data.deployFlowAggregatorCommon(flowAggregatorYML)
+	if err != nil {
+		return err
+	}
+	// Check for flow-aggregator pod running again for db connection establishment.
 	flowAggPod, err := data.getFlowAggregator()
 	if err != nil {
 		return fmt.Errorf("error when getting flow-aggregator Pod: %v", err)
 	}
+
 	podName := flowAggPod.Name
 	_, err = data.PodWaitFor(defaultTimeout*2, podName, flowAggregatorNamespace, func(p *corev1.Pod) (bool, error) {
 		for _, condition := range p.Status.Conditions {
@@ -1180,10 +1292,69 @@ func (data *TestData) deployFlowAggregator() error {
 		return false, nil
 	})
 	if err != nil {
-		_, stdout, stderr, podErr := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl get po %s -n %s -o yaml", podName, flowAggregatorNamespace))
+		_, stdout, stderr, podErr := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl get pod %s -n %s -o yaml", podName, flowAggregatorNamespace))
 		return fmt.Errorf("error when waiting for flow-aggregator Ready: %v; stdout %s, stderr: %s, %v", err, stdout, stderr, podErr)
 	}
 	return nil
+}
+
+func (data *TestData) deployFlowAggregatorCommon(yamlFile string) error {
+	rc, _, _, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl apply -f %s", yamlFile))
+	if err != nil || rc != 0 {
+		return fmt.Errorf("error when deploying the Flow Aggregator; %s not available on the control-plane Node", yamlFile)
+	}
+	if rc, _, _, err := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s rollout status deployment/%s --timeout=%v", flowAggregatorNamespace, flowAggregatorDeployment, 2*defaultTimeout)); err != nil || rc != 0 {
+		_, stdout, _, _ := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s describe pod", flowAggregatorNamespace))
+		_, logStdout, _, _ := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl -n %s logs -l app=flow-aggregator", flowAggregatorNamespace))
+		return fmt.Errorf("error when waiting for the Flow Aggregator rollout to complete. kubectl describe output: %s, logs: %s", stdout, logStdout)
+	}
+	return nil
+}
+
+func (data *TestData) waitForFlowAggregatorPod() error {
+	var flowAggPod *corev1.Pod
+	if err := wait.Poll(2*time.Second, defaultTimeout, func() (bool, error) {
+		var err error
+		flowAggPod, err = data.getFlowAggregator()
+		if err != nil {
+			return false, nil
+		}
+		return true, nil
+	}); err != nil {
+		return fmt.Errorf("error when getting flow-aggregator Pod: %v", err)
+	}
+
+	podName := flowAggPod.Name
+	_, err := data.PodWaitFor(defaultTimeout*2, podName, flowAggregatorNamespace, func(p *corev1.Pod) (bool, error) {
+		for _, condition := range p.Status.Conditions {
+			if condition.Type == corev1.PodReady {
+				return condition.Status == corev1.ConditionTrue, nil
+			}
+		}
+		return false, nil
+	})
+	if err != nil {
+		_, stdout, stderr, podErr := data.provider.RunCommandOnNode(controlPlaneNodeName(), fmt.Sprintf("kubectl get pod %s -n %s -o yaml", podName, flowAggregatorNamespace))
+		return fmt.Errorf("error when waiting for flow-aggregator Ready: %v; stdout %s, stderr: %s, %v", err, stdout, stderr, podErr)
+	}
+
+	return nil
+}
+
+// restartFlowAggregatorPods deletes the Flow Aggregator Pod to force it to be re-scheduled. It
+// then waits for the new Pod to become available.
+func (data *TestData) restartFlowAggregatorPods() error {
+	var gracePeriodSeconds int64 = 1
+	deleteOptions := metav1.DeleteOptions{
+		GracePeriodSeconds: &gracePeriodSeconds,
+	}
+	chListOptions := metav1.ListOptions{
+		LabelSelector: flowAggregatorPodLabel,
+	}
+	if err := data.clientset.CoreV1().Pods(antreaNamespace).DeleteCollection(context.TODO(), deleteOptions, chListOptions); err != nil {
+		return fmt.Errorf("error when deleting ClickHouse Pods: %v", err)
+	}
+	return data.waitForFlowAggregatorPod()
 }
 
 // getSparkOperator retrieves the name of the Spark Operator Pod (policy-recommendation-spark-operator-*).
