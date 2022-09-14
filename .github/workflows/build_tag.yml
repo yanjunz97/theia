@@ -33,7 +33,22 @@ jobs:
         make clickhouse-monitor
         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
         docker push antrea/theia-clickhouse-monitor:"${VERSION}"
-    
+
+  build-clickhouse-server:
+    runs-on: [ubuntu-latest]
+    needs: get-version
+    steps:
+    - uses: actions/checkout@v2
+    - name: Build clickhouse-server Docker image and push to registry
+      env:
+        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        VERSION: ${{ needs.get-version.outputs.version }}
+      run: |
+        make clickhouse-server
+        echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
+        docker push antrea/theia-clickhouse-server:"${VERSION}"
+
   build-policy-recommendation:
     runs-on: [ubuntu-latest]
     needs: get-version
