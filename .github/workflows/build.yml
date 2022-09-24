@@ -6,11 +6,13 @@ on:
       - main
       - release-*
       - feature/*
+      - test-multi-arch
   push:
     branches:
       - main
       - release-*
       - feature/*
+      - test-multi-arch
 
 jobs:
   check-clickhouse-monitor-changes:
@@ -64,16 +66,17 @@ jobs:
     runs-on: [ubuntu-latest]
     steps:
     - uses: actions/checkout@v2
-    - name: Build clickhouse-server Docker image
-      run: make clickhouse-server
-    - name: Push clickhouse-server Docker image to registry
-      if: ${{ github.repository == 'antrea-io/theia' && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    - name: Build and push clickhouse-server Docker image to registry
+      if: ${{ github.repository == 'yanjunz97/theia' && github.event_name == 'push' && github.ref == 'refs/heads/test-multi-arch'}}
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+        VERSION: latest
       run: |
         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        docker push antrea/theia-clickhouse-server:latest
+        make clickhouse-server-multi-arch
 
   check-policy-recommendation-changes:
     name: Check whether policy-recommendation image needs to be built based on diff

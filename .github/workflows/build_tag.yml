@@ -39,15 +39,16 @@ jobs:
     needs: get-version
     steps:
     - uses: actions/checkout@v2
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
     - name: Build clickhouse-server Docker image and push to registry
       env:
         DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
         DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         VERSION: ${{ needs.get-version.outputs.version }}
       run: |
-        make clickhouse-server
         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        docker push antrea/theia-clickhouse-server:"${VERSION}"
+        make clickhouse-server-multi-arch
 
   build-policy-recommendation:
     runs-on: [ubuntu-latest]
