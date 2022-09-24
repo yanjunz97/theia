@@ -175,6 +175,7 @@ theia-manager:
 theia-manager-bin:
 	@mkdir -p $(BINDIR)
 	GOOS=linux $(GO) build -o $(BINDIR) $(GOFLAGS) -ldflags '$(LDFLAGS)' antrea.io/theia/cmd/theia-manager
+
 .PHONY: clickhouse-server
 clickhouse-server:
 	@echo "===> Building antrea/theia-clickhouse-server Docker image <==="
@@ -182,6 +183,11 @@ clickhouse-server:
 	docker tag antrea/theia-clickhouse-server:$(DOCKER_IMG_VERSION) antrea/theia-clickhouse-server
 	docker tag antrea/theia-clickhouse-server:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-clickhouse-server
 	docker tag antrea/theia-clickhouse-server:$(DOCKER_IMG_VERSION) projects.registry.vmware.com/antrea/theia-clickhouse-server:$(DOCKER_IMG_VERSION)
+
+.PHONY: clickhouse-server-multi-arch
+clickhouse-server-multi-arch:
+	@echo "===> Building antrea/theia-clickhouse-server Docker image <==="
+	docker buildx build --platform=linux/amd64,linux/arm64 --push --pull -t zhouya318/theia-clickhouse-server:$(VERSION) -f build/images/Dockerfile.clickhouse-server.ubuntu $(DOCKER_BUILD_ARGS) .
 
 .PHONY: clickhouse-schema-management-plugin
 clickhouse-schema-management-plugin:

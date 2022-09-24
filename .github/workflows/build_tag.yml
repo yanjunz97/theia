@@ -45,9 +45,8 @@ jobs:
         DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
         VERSION: ${{ needs.get-version.outputs.version }}
       run: |
-        make clickhouse-server
         echo "$DOCKER_PASSWORD" | docker login -u "$DOCKER_USERNAME" --password-stdin
-        docker push antrea/theia-clickhouse-server:"${VERSION}"
+        make clickhouse-server-multi-arch
 
   build-policy-recommendation:
     runs-on: [ubuntu-latest]
