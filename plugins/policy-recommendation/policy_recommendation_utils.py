@@ -17,7 +17,6 @@
 from ipaddress import ip_address, IPv4Address
 import json
 from re import sub
-import yaml
 
 
 def is_intstring(s):
@@ -53,8 +52,13 @@ def camel_dict(d):
             result[camel(key)] = value
     return result
 
+def merge_policy_dict(a, b):
+    for key, value in b.items():
+        if key in a:
+            a[key] += value
+        else:
+            a[key] = value
+    return a
 
-def dict_to_yaml(d):
-    return yaml.dump(
-        yaml.load(json.dumps(camel_dict(d)), Loader=yaml.FullLoader)
-    )
+def dict_to_json(d):
+    return json.dumps(camel_dict(d))

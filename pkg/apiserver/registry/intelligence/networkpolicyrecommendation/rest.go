@@ -16,22 +16,29 @@ package networkpolicyrecommendation
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 
 	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/apis/meta/internalversion"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+
 	"k8s.io/apiserver/pkg/registry/rest"
+	"k8s.io/klog/v2"
+	"sigs.k8s.io/yaml"
 
 	crdv1alpha1 "antrea.io/theia/pkg/apis/crd/v1alpha1"
 	intelligence "antrea.io/theia/pkg/apis/intelligence/v1alpha1"
 	"antrea.io/theia/pkg/querier"
+	"antrea.io/theia/pkg/util/clickhouse"
 )
 
 // REST implements rest.Storage for NetworkPolicyRecommendation.
 type REST struct {
 	npRecommendationQuerier querier.NPRecommendationQuerier
+	clickhouseConnect       *sql.DB
 }
 
 var (
@@ -42,7 +49,9 @@ var (
 	_ rest.GracefulDeleter = &REST{}
 )
 
-const defaultNameSpace = "flow-visibility"
+const (
+	defaultNameSpace = "flow-visibility"
+)
 
 // NewREST returns a REST object that will work against API services.
 func NewREST(nprq querier.NPRecommendationQuerier) *REST {
@@ -60,6 +69,15 @@ func (r *REST) Get(ctx context.Context, name string, options *metav1.GetOptions)
 	}
 	intelliNPR := new(intelligence.NetworkPolicyRecommendation)
 	r.copyNetworkPolicyRecommendation(intelliNPR, npReco)
+	// Try to retrieve result from ClickHouse in case NPR is completed
+	if npReco.Status.State == crdv1alpha1.NPRecommendationStateCompleted {
+		result, err := r.getRecommendationResult(npReco.Status.SparkApplication)
+		if err != nil {
+			klog.Warningf("Failed to get the result for completed NetworkPolicy Recommedation with id %s, error: %v", npReco.Status.SparkApplication, err)
+		} else {
+			intelliNPR.Status.RecommendationOutcome = result
+		}
+	}
 	return intelliNPR, nil
 }
 
@@ -153,11 +171,38 @@ func (r *REST) copyNetworkPolicyRecommendation(intelli *intelligence.NetworkPoli
 	intelli.Status.SparkApplication = crd.Status.SparkApplication
 	intelli.Status.CompletedStages = crd.Status.CompletedStages
 	intelli.Status.TotalStages = crd.Status.TotalStages
-	if crd.Status.RecommendedNP != nil {
-		intelli.Status.RecommendedNetworkPolicy = crd.Status.RecommendedNP.Spec.Yamls
-	}
 	intelli.Status.ErrorMsg = crd.Status.ErrorMsg
 	intelli.Status.StartTime = crd.Status.StartTime
 	intelli.Status.EndTime = crd.Status.EndTime
 	return nil
+}
+
+func (r *REST) getRecommendationResult(id string) (result string, err error) {
+	if r.clickhouseConnect == nil {
+		r.clickhouseConnect, err = clickhouse.SetupConnection()
+		if err != nil {
+			return result, err
+		}
+	}
+	query := "SELECT policy FROM recommendations WHERE id = (?);"
+	rows, err := r.clickhouseConnect.Query(query, id)
+	if err != nil {
+		return result, fmt.Errorf("failed to get recommendation result with id %s: %v", id, err)
+	}
+	defer rows.Close()
+	var policies []string
+	for rows.Next() {
+		var policyJson []byte
+		err := rows.Scan(&policyJson)
+		if err != nil {
+			return result, fmt.Errorf("failed to scan recommendation result: %v", err)
+		}
+		buf, err := yaml.JSONToYAML(policyJson)
+		if err != nil {
+			return result, fmt.Errorf("failed to parse recommendation result: %v", err)
+		}
+		policies = append(policies, string(buf))
+	}
+	result = strings.Join(policies, "---\n")
+	return result, nil
 }

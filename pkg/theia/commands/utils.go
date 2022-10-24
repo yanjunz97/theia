@@ -26,6 +26,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go"
 	"github.com/spf13/cobra"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
@@ -37,6 +38,7 @@ import (
 	"antrea.io/theia/pkg/apiserver/certificate"
 	"antrea.io/theia/pkg/theia/commands/config"
 	"antrea.io/theia/pkg/theia/portforwarder"
+	"antrea.io/theia/pkg/util/k8s"
 )
 
 var (
@@ -85,19 +87,15 @@ func CreateTheiaManagerClient(k8sClient kubernetes.Interface, kubeconfig string,
 	}
 	var host string
 	var portForward *portforwarder.PortForwarder
+	serviceIP, servicePort, err := k8s.GetServiceAddr(k8sClient, config.TheiaManagerServiceName, config.FlowVisibilityNS, v1.ProtocolTCP)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error when getting the Theia Manager Service address: %v", err)
+	}
 	if useClusterIP {
-		serviceIP, servicePort, err := GetServiceAddr(k8sClient, config.TheiaManagerServiceName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error when getting the Theia Manager Service address: %v", err)
-		}
 		host = net.JoinHostPort(serviceIP, fmt.Sprint(servicePort))
 	} else {
 		listenAddress := "localhost"
 		listenPort := apis.TheiaManagerAPIPort
-		_, servicePort, err := GetServiceAddr(k8sClient, config.TheiaManagerServiceName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("error when getting the Theia Manager Service port: %v", err)
-		}
 		// Forward the Theia Manager service port
 		portForward, err = StartPortForward(kubeconfig, config.TheiaManagerServiceName, servicePort, listenAddress, listenPort)
 		if err != nil {
@@ -206,25 +204,6 @@ func CheckClickHousePod(clientset kubernetes.Interface) error {
 	return nil
 }
 
-func GetServiceAddr(clientset kubernetes.Interface, serviceName string) (string, int, error) {
-	var serviceIP string
-	var servicePort int
-	service, err := clientset.CoreV1().Services(config.FlowVisibilityNS).Get(context.TODO(), serviceName, metav1.GetOptions{})
-	if err != nil {
-		return serviceIP, servicePort, fmt.Errorf("error when finding the Service %s: %v", serviceName, err)
-	}
-	serviceIP = service.Spec.ClusterIP
-	for _, port := range service.Spec.Ports {
-		if port.Name == "tcp" || port.Protocol == "TCP" {
-			servicePort = int(port.Port)
-		}
-	}
-	if servicePort == 0 {
-		return serviceIP, servicePort, fmt.Errorf("error when finding the Service %s: %v", serviceName, err)
-	}
-	return serviceIP, servicePort, nil
-}
-
 func StartPortForward(kubeconfig string, service string, servicePort int, listenAddress string, listenPort int) (*portforwarder.PortForwarder, error) {
 	configuration, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
 	if err != nil {
@@ -308,19 +287,15 @@ func connectClickHouse(clientset kubernetes.Interface, url string) (*sql.DB, err
 func SetupClickHouseConnection(clientset kubernetes.Interface, kubeconfig string, endpoint string, useClusterIP bool) (connect *sql.DB, portForward *portforwarder.PortForwarder, err error) {
 	if endpoint == "" {
 		service := "clickhouse-clickhouse"
+		serviceIP, servicePort, err := k8s.GetServiceAddr(clientset, service, config.FlowVisibilityNS, v1.ProtocolTCP)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error when getting the ClickHouse Service address: %v", err)
+		}
 		if useClusterIP {
-			serviceIP, servicePort, err := GetServiceAddr(clientset, service)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error when getting the ClickHouse Service address: %v", err)
-			}
 			endpoint = fmt.Sprintf("tcp://%s:%d", serviceIP, servicePort)
 		} else {
 			listenAddress := "localhost"
 			listenPort := 9000
-			_, servicePort, err := GetServiceAddr(clientset, service)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error when getting the ClickHouse Service port: %v", err)
-			}
 			// Forward the ClickHouse service port
 			portForward, err = StartPortForward(kubeconfig, service, servicePort, listenAddress, listenPort)
 			if err != nil {
@@ -355,10 +330,10 @@ func TableOutputVertical(table [][]string) {
 	header := table[0]
 	writer := tabwriter.NewWriter(os.Stdout, 15, 0, 1, ' ', 0)
 	for i := 1; i < len(table); i++ {
-		fmt.Fprintln(writer, fmt.Sprintf("Row %d:\t", i))
-		fmt.Fprintln(writer, fmt.Sprint("-------"))
+		fmt.Fprintf(writer, "Row %d:\t\n", i)
+		fmt.Fprintf(writer, "-------\n")
 		for j, val := range table[i] {
-			fmt.Fprintln(writer, fmt.Sprintf("%s:\t%s", header[j], val))
+			fmt.Fprintf(writer, "%s:\t%s\n", header[j], val)
 		}
 		fmt.Fprintln(writer)
 		writer.Flush()

@@ -39,6 +39,7 @@ import (
 	"antrea.io/theia/pkg/client/clientset/versioned"
 	crdv1a1informers "antrea.io/theia/pkg/client/informers/externalversions/crd/v1alpha1"
 	"antrea.io/theia/pkg/client/listers/crd/v1alpha1"
+	"antrea.io/theia/pkg/util/clickhouse"
 	"antrea.io/theia/pkg/util/policyrecommendation"
 	sparkv1 "antrea.io/theia/third_party/sparkoperator/v1beta2"
 )
@@ -86,7 +87,6 @@ type NPRecommendationController struct {
 	npRecommendationInformer cache.SharedIndexInformer
 	npRecommendationLister   v1alpha1.NetworkPolicyRecommendationLister
 	npRecommendationSynced   cache.InformerSynced
-	recommendedNPInformer    cache.SharedIndexInformer
 	// queue maintains the Service objects that need to be synced.
 	queue                  workqueue.RateLimitingInterface
 	deletionQueue          workqueue.RateLimitingInterface
@@ -104,7 +104,6 @@ func NewNPRecommendationController(
 	crdClient versioned.Interface,
 	kubeClient kubernetes.Interface,
 	npRecommendationInformer crdv1a1informers.NetworkPolicyRecommendationInformer,
-	recommendedNPInformer crdv1a1informers.RecommendedNetworkPolicyInformer,
 ) *NPRecommendationController {
 	c := &NPRecommendationController{
 		crdClient:                crdClient,
@@ -114,7 +113,6 @@ func NewNPRecommendationController(
 		npRecommendationInformer: npRecommendationInformer.Informer(),
 		npRecommendationLister:   npRecommendationInformer.Lister(),
 		npRecommendationSynced:   npRecommendationInformer.Informer().HasSynced,
-		recommendedNPInformer:    recommendedNPInformer.Informer(),
 		periodicResyncSet:        make(map[apimachinerytypes.NamespacedName]struct{}),
 	}
 
@@ -127,18 +125,7 @@ func NewNPRecommendationController(
 		resyncPeriod,
 	)
 
-	// Add SparkApplication ID index for RecommendedNetworkPolicy
-	c.recommendedNPInformer.AddIndexers(cache.Indexers{idIndex: rnpIdIndexFunc})
-
 	return c
-}
-
-func rnpIdIndexFunc(obj interface{}) ([]string, error) {
-	recommendedNP, ok := obj.(*crdv1alpha1.RecommendedNetworkPolicy)
-	if !ok {
-		return nil, fmt.Errorf("obj is not RecommendedNetworkPolicy: %v", obj)
-	}
-	return []string{recommendedNP.Spec.Id}, nil
 }
 
 func (c *NPRecommendationController) addNPRecommendation(obj interface{}) {
@@ -316,7 +303,9 @@ func (c *NPRecommendationController) syncNPRecommendation(key apimachinerytypes.
 	case crdv1alpha1.NPRecommendationStateRunning:
 		err = c.updateProgress(npReco)
 	case crdv1alpha1.NPRecommendationStateCompleted:
-		err = c.updateResult(npReco)
+		if npReco.Status.EndTime.IsZero() {
+			err = c.finishJob(npReco)
+		}
 	}
 	return err
 }
@@ -327,27 +316,9 @@ func (c *NPRecommendationController) cleanupNPRecommendation(namespace string, s
 	if err != nil {
 		return fmt.Errorf("failed to delete the SparkApplication %s, error: %v", sparkApplicationId, err)
 	}
-	// Delete the RNP if exists
-	rnps, err := c.recommendedNPInformer.GetIndexer().ByIndex(idIndex, sparkApplicationId)
-	if err != nil {
-		return fmt.Errorf("failed to get the RecommendedNetworkPolicy when deleting, error: %v", err)
-	}
-	var undeletedRnpNames []string
-	var errorList []error
-	for _, obj := range rnps {
-		recommendedNetworkPolicy := obj.(*crdv1alpha1.RecommendedNetworkPolicy)
-		err = c.crdClient.CrdV1alpha1().RecommendedNetworkPolicies(namespace).Delete(context.TODO(), recommendedNetworkPolicy.Name, metav1.DeleteOptions{})
-		if err != nil {
-			undeletedRnpNames = append(undeletedRnpNames, recommendedNetworkPolicy.Name)
-			errorList = append(errorList, err)
-		}
-	}
-	if len(errorList) > 0 {
-		return fmt.Errorf("failed to deleted RecommendedNetworkPolicies: %v, error: %v", undeletedRnpNames, errorList)
-	}
 	// Delete the result from the ClickHouse
 	if c.clickhouseConnect == nil {
-		c.clickhouseConnect, err = setupClickHouseConnection(c.kubeClient, namespace)
+		c.clickhouseConnect, err = clickhouse.SetupConnection()
 		if err != nil {
 			return err
 		}
@@ -355,14 +326,13 @@ func (c *NPRecommendationController) cleanupNPRecommendation(namespace string, s
 	return deletePolicyRecommendationResult(c.clickhouseConnect, sparkApplicationId)
 }
 
-func (c *NPRecommendationController) updateResult(npReco *crdv1alpha1.NetworkPolicyRecommendation) error {
+func (c *NPRecommendationController) finishJob(npReco *crdv1alpha1.NetworkPolicyRecommendation) error {
 	namespacedName := apimachinerytypes.NamespacedName{
 		Name:      npReco.Name,
 		Namespace: npReco.Namespace,
 	}
 	// Stop periodical job
 	c.stopPeriodicSync(namespacedName)
-	// Delete related SparkApplication CR
 	if npReco.Status.SparkApplication == "" {
 		return c.updateNPRecommendationStatus(
 			npReco,
@@ -372,50 +342,15 @@ func (c *NPRecommendationController) updateResult(npReco *crdv1alpha1.NetworkPol
 			},
 		)
 	}
-
-	if npReco.Status.RecommendedNP == nil {
-		err := deleteSparkApplicationIfExists(c.kubeClient, npReco.Namespace, npReco.Status.SparkApplication)
-		if err != nil {
-			return fmt.Errorf("fail to delete Spark Application: %s, error: %v", npReco.Status.SparkApplication, err)
-		}
-		var recommendedNetworkPolicy *crdv1alpha1.RecommendedNetworkPolicy
-		// Check if RecommendedNetworkPolicy CR is created
-		rnps, err := c.recommendedNPInformer.GetIndexer().ByIndex(idIndex, npReco.Status.SparkApplication)
-		if err == nil && len(rnps) > 0 {
-			// Use the existing RecommendedNetworkPolicy CR
-			recommendedNetworkPolicy = rnps[0].(*crdv1alpha1.RecommendedNetworkPolicy)
-			if len(rnps) > 1 {
-				klog.V(4).InfoS("More than 1 RecommendedNetworkPolicy", "id", npReco.Status.SparkApplication)
-			}
-		} else {
-			if err != nil {
-				klog.V(4).InfoS("Failed to find RecommendedNetworkPolicy", "id", npReco.Status.SparkApplication)
-			}
-			// Get result from database
-			if c.clickhouseConnect == nil {
-				c.clickhouseConnect, err = setupClickHouseConnection(c.kubeClient, npReco.Namespace)
-				if err != nil {
-					return err
-				}
-			}
-			recommendedNetworkPolicy, err = getPolicyRecommendationResult(c.clickhouseConnect, npReco.Status.SparkApplication)
-			if err != nil {
-				return err
-			}
-			// Create RecommendedNetworkPolicy CR
-			recommendedNetworkPolicy, err = c.crdClient.CrdV1alpha1().RecommendedNetworkPolicies(npReco.Namespace).Create(context.TODO(), recommendedNetworkPolicy, metav1.CreateOptions{})
-			if err != nil {
-				return err
-			}
-			klog.V(2).InfoS("Created RecommendedNetworkPolicy", "RecommendedNetworkPolicy", recommendedNetworkPolicy.Name, "NetworkRecommendationPolicy", npReco.Name)
-		}
-		return c.updateNPRecommendationStatus(npReco, crdv1alpha1.NetworkPolicyRecommendationStatus{
-			State:         crdv1alpha1.NPRecommendationStateCompleted,
-			RecommendedNP: recommendedNetworkPolicy,
-			EndTime:       metav1.NewTime(time.Now()),
-		})
+	// Delete related SparkApplication CR
+	err := deleteSparkApplicationIfExists(c.kubeClient, npReco.Namespace, npReco.Status.SparkApplication)
+	if err != nil {
+		return fmt.Errorf("fail to delete Spark Application: %s, error: %v", npReco.Status.SparkApplication, err)
 	}
-	return nil
+	return c.updateNPRecommendationStatus(npReco, crdv1alpha1.NetworkPolicyRecommendationStatus{
+		State:   crdv1alpha1.NPRecommendationStateCompleted,
+		EndTime: metav1.NewTime(time.Now()),
+	})
 }
 
 func (c *NPRecommendationController) updateProgress(npReco *crdv1alpha1.NetworkPolicyRecommendation) error {
@@ -690,9 +625,6 @@ func (c *NPRecommendationController) updateNPRecommendationStatus(npReco *crdv1a
 	}
 	if status.TotalStages != 0 {
 		update.Status.TotalStages = status.TotalStages
-	}
-	if status.RecommendedNP != nil {
-		update.Status.RecommendedNP = status.RecommendedNP
 	}
 	if status.ErrorMsg != "" {
 		update.Status.ErrorMsg = status.ErrorMsg

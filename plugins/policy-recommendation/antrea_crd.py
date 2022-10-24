@@ -784,3 +784,9 @@ class NamespacedName(object):
                 result[attr] = value
 
         return result
+
+class PolicyKind():
+    ANTREA_NETWORK_POLICY = "anp"
+    K8S_NETWORK_POLICY = "knp"
+    ANTREA_CLUSTER_NETWORK_POLICY = "acnp"
+    ANTREA_CLUSTER_GROUP = "acg"

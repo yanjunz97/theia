@@ -165,9 +165,6 @@ func (c *fakeQuerier) GetNetworkPolicyRecommendation(namespace, name string) (*c
 	return &crdv1alpha1.NetworkPolicyRecommendation{
 		Spec: crdv1alpha1.NetworkPolicyRecommendationSpec{
 			JobType: "NPR", PolicyType: "Allow"},
-		Status: crdv1alpha1.NetworkPolicyRecommendationStatus{
-			RecommendedNP: &crdv1alpha1.RecommendedNetworkPolicy{},
-		},
 	}, nil
 }
 
@@ -181,7 +178,7 @@ func (c *fakeQuerier) DeleteNetworkPolicyRecommendation(namespace, name string) 
 
 func (c *fakeQuerier) ListNetworkPolicyRecommendation(namespace string) ([]*crdv1alpha1.NetworkPolicyRecommendation, error) {
 	return []*crdv1alpha1.NetworkPolicyRecommendation{
-		{ObjectMeta: v1.ObjectMeta{Name: "npr-1"}, Status: crdv1alpha1.NetworkPolicyRecommendationStatus{RecommendedNP: &crdv1alpha1.RecommendedNetworkPolicy{}}},
-		{ObjectMeta: v1.ObjectMeta{Name: "npr-2"}, Status: crdv1alpha1.NetworkPolicyRecommendationStatus{RecommendedNP: &crdv1alpha1.RecommendedNetworkPolicy{}}},
+		{ObjectMeta: v1.ObjectMeta{Name: "npr-1"}},
+		{ObjectMeta: v1.ObjectMeta{Name: "npr-2"}},
 	}, nil
 }

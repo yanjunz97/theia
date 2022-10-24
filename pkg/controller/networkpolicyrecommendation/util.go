@@ -22,13 +22,10 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
-	"github.com/ClickHouse/clickhouse-go"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 
-	crdv1alpha1 "antrea.io/theia/pkg/apis/crd/v1alpha1"
 	sparkv1 "antrea.io/theia/third_party/sparkoperator/v1beta2"
 )
 
@@ -84,25 +81,6 @@ func getPolicyRecommendationStatus(client kubernetes.Interface, id string, names
 	return state, errorMessage, nil
 }
 
-func getServiceAddr(client kubernetes.Interface, serviceName, serviceNamespace, servicePortName string) (string, int, error) {
-	var serviceIP string
-	var servicePort int
-	service, err := client.CoreV1().Services(serviceNamespace).Get(context.TODO(), serviceName, metav1.GetOptions{})
-	if err != nil {
-		return serviceIP, servicePort, fmt.Errorf("error when finding the Service %s: %v", serviceName, err)
-	}
-	serviceIP = service.Spec.ClusterIP
-	for _, port := range service.Spec.Ports {
-		if port.Name == servicePortName {
-			servicePort = int(port.Port)
-		}
-	}
-	if servicePort == 0 {
-		return serviceIP, servicePort, fmt.Errorf("error when finding the Service %s: no %s service port", serviceName, servicePortName)
-	}
-	return serviceIP, servicePort, nil
-}
-
 func getResponseFromSparkMonitoringSvc(url string) ([]byte, error) {
 	sparkMonitoringClient := http.Client{}
 	request, err := http.NewRequest(http.MethodGet, url, nil)
@@ -156,85 +134,6 @@ func getPolicyRecommendationProgress(baseUrl string) (completedStages int, total
 		}
 	}
 	return completedStages, totalStages, nil
-}
-
-func getPolicyRecommendationResult(connect *sql.DB, id string) (*crdv1alpha1.RecommendedNetworkPolicy, error) {
-	var resultType, resultTimeCreatedStr, resultYamls string
-	query := "SELECT type, timeCreated, yamls FROM recommendations WHERE id = (?);"
-	err := connect.QueryRow(query, id).Scan(&resultType, &resultTimeCreatedStr, &resultYamls)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get recommendation result with id %s: %v", id, err)
-	}
-	resultTimeCreated, err := time.Parse(clickHouseTimeFormat, resultTimeCreatedStr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse timeCreated of the result for %s: %v", id, err)
-	}
-	recommendedNetworkPolicy := &crdv1alpha1.RecommendedNetworkPolicy{
-		ObjectMeta: metav1.ObjectMeta{
-			GenerateName: "rnp-",
-		},
-		Spec: crdv1alpha1.RecommendedNetworkPolicySpec{
-			Id:          id,
-			Type:        resultType,
-			TimeCreated: metav1.NewTime(resultTimeCreated),
-			Yamls:       resultYamls,
-		},
-	}
-	return recommendedNetworkPolicy, nil
-}
-
-func getClickHouseSecret(client kubernetes.Interface, namespace string) (username []byte, password []byte, err error) {
-	secret, err := client.CoreV1().Secrets(namespace).Get(context.TODO(), "clickhouse-secret", metav1.GetOptions{})
-	if err != nil {
-		return username, password, fmt.Errorf("error when finding the ClickHouse secret. Error: %v", err)
-	}
-	username, ok := secret.Data["username"]
-	if !ok {
-		return username, password, fmt.Errorf("error when getting the ClickHouse username")
-	}
-	password, ok = secret.Data["password"]
-	if !ok {
-		return username, password, fmt.Errorf("error when getting the ClickHouse password")
-	}
-	return username, password, nil
-}
-
-func connectClickHouse(url string) (*sql.DB, error) {
-	var connect *sql.DB
-	// Open the database and ping it
-	var err error
-	connect, err = openSql("clickhouse", url)
-	if err != nil {
-		return connect, fmt.Errorf("failed to open ClickHouse: %v", err)
-	}
-	if err := connect.Ping(); err != nil {
-		if exception, ok := err.(*clickhouse.Exception); ok {
-			return connect, fmt.Errorf("failed to ping ClickHouse: %v", exception.Message)
-		} else {
-			return connect, fmt.Errorf("failed to ping ClickHouse: %v", err)
-		}
-	}
-	return connect, nil
-}
-
-func setupClickHouseConnection(client kubernetes.Interface, namespace string) (connect *sql.DB, err error) {
-	serviceIP, servicePort, err := getServiceAddr(client, "clickhouse-clickhouse", namespace, "tcp")
-	if err != nil {
-		return connect, fmt.Errorf("error when getting the ClickHouse Service address: %v", err)
-	}
-	endpoint := fmt.Sprintf("tcp://%s:%d", serviceIP, servicePort)
-
-	// Connect to ClickHouse and execute query
-	username, password, err := getClickHouseSecret(client, namespace)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("%s?debug=false&username=%s&password=%s", endpoint, username, password)
-	connect, err = connectClickHouse(url)
-	if err != nil {
-		return nil, fmt.Errorf("error when connecting to ClickHouse, %v", err)
-	}
-	return connect, nil
 }
 
 func deleteSparkApplicationIfExists(client kubernetes.Interface, namespace string, id string) error {

@@ -22,58 +22,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"antrea.io/theia/pkg/apis"
 	"antrea.io/theia/pkg/theia/commands/config"
 )
-
-func TestGetServiceAddr(t *testing.T) {
-	testCases := []struct {
-		name             string
-		fakeClientset    *fake.Clientset
-		serviceName      string
-		expectedIP       string
-		expectedPort     int
-		expectedErrorMsg string
-	}{
-		{
-			name: "valid case",
-			fakeClientset: fake.NewSimpleClientset(
-				&v1.Service{
-					ObjectMeta: metav1.ObjectMeta{
-						Name:      config.TheiaManagerServiceName,
-						Namespace: config.FlowVisibilityNS,
-					},
-					Spec: v1.ServiceSpec{
-						Ports:     []v1.ServicePort{{Port: apis.TheiaManagerAPIPort, Protocol: "TCP"}},
-						ClusterIP: "10.98.208.26",
-					},
-				},
-			),
-			serviceName:      config.TheiaManagerServiceName,
-			expectedIP:       "10.98.208.26",
-			expectedPort:     apis.TheiaManagerAPIPort,
-			expectedErrorMsg: "",
-		},
-		{
-			name:             "service not found",
-			fakeClientset:    fake.NewSimpleClientset(),
-			serviceName:      config.TheiaManagerServiceName,
-			expectedIP:       "",
-			expectedPort:     0,
-			expectedErrorMsg: `error when finding the Service theia-manager: services "theia-manager" not found`,
-		},
-	}
-	for _, tt := range testCases {
-		t.Run(tt.name, func(t *testing.T) {
-			ip, port, err := GetServiceAddr(tt.fakeClientset, tt.serviceName)
-			if tt.expectedErrorMsg != "" {
-				assert.EqualErrorf(t, err, tt.expectedErrorMsg, "Error should be: %v, got: %v", tt.expectedErrorMsg, err)
-			}
-			assert.Equal(t, tt.expectedIP, ip)
-			assert.Equal(t, tt.expectedPort, port)
-		})
-	}
-}
 
 func TestPolicyRecoPreCheck(t *testing.T) {
 	testCases := []struct {
