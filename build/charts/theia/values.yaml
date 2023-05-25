@@ -114,9 +114,9 @@ clickhouse:
       replicas: 1
       # -- Container image used by the ZooKeeper.
       image:
-        repository: "projects.registry.vmware.com/antrea/theia-zookeeper"
+        repository: "docker.io/zookeeper"
         pullPolicy: "IfNotPresent"
-        tag: "3.8.0"
+        tag: "3.8.1"
       # -- Set securityContext.
       # Use a specific uid, gid for zookeeper.
       securityContext:

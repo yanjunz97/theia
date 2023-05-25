@@ -18,7 +18,7 @@ Kubernetes: `>= 1.16.0-0`
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| clickhouse.cluster.installZookeeper.image | object | `{"pullPolicy":"IfNotPresent","repository":"projects.registry.vmware.com/antrea/theia-zookeeper","tag":"3.8.0"}` | Container image used by the ZooKeeper. |
+| clickhouse.cluster.installZookeeper.image | object | `{"pullPolicy":"IfNotPresent","repository":"docker.io/zookeeper","tag":"3.8.1"}` | Container image used by the ZooKeeper. |
 | clickhouse.cluster.installZookeeper.replicas | int | `1` | Number of ZooKeeper replicas. It is recommended to be odd. When deploying ClickHouse cluster with more than 1 replica, 3 is the minimum number of ZooKeeper hosts required to manage replication and fault tolerance. Please refer to <https://zookeeper.apache.org/doc/current/zookeeperStarted.html#sc_RunningReplicatedZooKeeper> for more information. |
 | clickhouse.cluster.installZookeeper.securityContext | object | `{"fsGroup":1000,"runAsUser":1000}` | Set securityContext. Use a specific uid, gid for zookeeper. |
 | clickhouse.cluster.installZookeeper.size | string | `"5Gi"` | Memory size for each ZooKeeper pod. Can be a plain integer or as a fixed-point number using one of these quantity suffixes: E, P, T, G, M, K. Or the power-of-two equivalents: Ei, Pi, Ti, Gi, Mi, Ki. |
